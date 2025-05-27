@@ -1,157 +1,192 @@
 <script lang="ts">
     import { createEventDispatcher } from 'svelte';
-    import { addTransaction, transactions } from '../stores/transactions';
-    import { cuentaCasa, cuentaMatchHome, ingresoA, pagadoCon } from '../data/parameters';
-    
+    import { addTransaction, updateTransaction, removeTransaction, type Transaction } from '../stores/transactions';
+    import { ingresosCasa, ingresosMatchHome, pagadoCon, pagadoPor } from '../data/parameters'; // Asumiendo que tienes parámetros para ingresos
+
     export let show = false;
-    
-    const dispatch = createEventDispatcher();    // Datos del formulario
+    export let initialData: Transaction | null = null; // Para recibir la operación a editar
+
+    const dispatch = createEventDispatcher();
+
+    // Datos del formulario
     let description: string = '';
-    let amount: number | null = null; // Valor numérico real
-    let formattedAmount: string = ''; // Versión formateada para mostrar
-    let filteredPayers: string[] = [];
-    let showPayerSuggestions: boolean = false;
-    
-    // Función para formatear números con comas cada 3 dígitos
+    let amount: number | null = null;
+    let formattedAmount: string = '';
+    let filteredSources: string[] = []; // Para autocompletar fuentes de ingreso
+    let showSourceSuggestions: boolean = false;
+
+    // Funciones de formato de número (igual que en ExpenseModal)
     function formatNumber(value: string): string {
-        // Eliminar caracteres no numéricos excepto punto decimal
         let clean = value.replace(/[^\d.]/g, '');
-        
-        // Asegurarse de que solo hay un punto decimal
         const decimalPosition = clean.indexOf('.');
         if (decimalPosition !== -1) {
             clean = clean.slice(0, decimalPosition + 1) + clean.slice(decimalPosition + 1).replace(/\./g, '');
         }
-        
-        // Separar la parte entera y decimal
         let [integerPart, decimalPart] = clean.split('.');
-        
-        // Formatear la parte entera con comas
         integerPart = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        
-        // Reconstruir el número con parte decimal si existe
         return decimalPart !== undefined ? `${integerPart}.${decimalPart}` : integerPart;
     }
-    
-    // Función para parsear el valor formateado a número
+
     function parseFormattedNumber(formatted: string): number | null {
         if (!formatted) return null;
         const numberStr = formatted.replace(/,/g, '');
         const number = parseFloat(numberStr);
         return isNaN(number) ? null : number;
     }
-    
-    // Actualizar amount cuando cambia formattedAmount
-    $: {
-        amount = parseFormattedNumber(formattedAmount);
-    }
-      // Formatear fecha para mostrar como dd/mmm/yyyy
+
+    // Funciones de formato de fecha (igual que en ExpenseModal)
     function formatDateDisplay(date: Date): string {
         const day = date.getDate().toString().padStart(2, '0');
         const month = date.toLocaleString('es', { month: 'short' });
         const year = date.getFullYear();
         return `${day}/${month}/${year}`;
     }
-    
-    // Formatear fecha para input type="date" (YYYY-MM-DD)
+
     function formatDateInput(date: Date): string {
         return date.toISOString().split('T')[0];
     }
-    
-    // Convertir de formato input date a Date object
+
     function parseInputDate(dateString: string): Date {
         return new Date(dateString);
     }
-      let dateObject: Date = new Date(); // Objeto Date actual
-    let date: string = formatDateInput(dateObject); // Formato YYYY-MM-DD para input type="date"
-    let displayDate: string = formatDateDisplay(dateObject); // Formato dd/mmm/yyyy para mostrar
-    
-    // Actualizar la fecha mostrada cuando cambie la fecha seleccionada
+
+    let dateObject: Date = new Date();
+    let date: string = formatDateInput(dateObject);
+    let displayDate: string = formatDateDisplay(dateObject);
+
     function updateDisplayDate() {
         dateObject = parseInputDate(date);
         displayDate = formatDateDisplay(dateObject);
     }
-    
-    // Datos adicionales
-    let location: string = ''; // Valor vacío para Opciones
-    let cuenta: string = ''; // Valor vacío para tipo de ingreso
-    let paymentMethod: string = ''; // Valor vacío para método de pago
-    let invoice: string = '';
+
+    // Datos adicionales específicos para ingresos
+    let location: string = ''; // 'Casa' o 'Match Home'
+    let incomeSource: string = ''; // Fuente del ingreso (ej. Nómina, Venta, etc.)
+    let paymentMethod: string = ''; // Cómo se recibió el ingreso
+    let invoice: string = ''; // Referencia o factura
+    let tags: string = '';
     let notes: string = '';
-    
-    // Obtener opciones de cuenta según la ubicación seleccionada
-    $: opcionesCuenta = location === 'Casa' ? cuentaCasa : cuentaMatchHome;
-      // Función para obtener pagadores únicos de las transacciones existentes
-    function getUniquePayers(): string[] {
-        const payers: string[] = [];
-        
-        // Extraer los pagadores únicos de las transacciones de ingreso
-        $transactions.forEach(transaction => {
-            if (transaction.type === 'ingreso' && transaction.description && !payers.includes(transaction.description)) {
-                payers.push(transaction.description);
-            }
-        });
-        
-        return payers;
-    }
-      // Función para filtrar pagadores al escribir
-    function filterPayers(input: string) {
-        const payers = getUniquePayers();
-        
-        if (input.length > 0) {
-            filteredPayers = payers.filter(payer => 
-                payer.toLowerCase().includes(input.toLowerCase())
-            );
-            showPayerSuggestions = filteredPayers.length > 0;
+
+    // Opciones para la fuente del ingreso según la ubicación
+    $: opcionesFuenteIngreso = location === 'Casa' ? ingresosCasa : ingresosMatchHome;
+
+    // Lógica reactiva para poblar/resetear el formulario
+    $: if (show) {
+        if (initialData) {
+            description = initialData.description || '';
+            amount = initialData.amount;
+            formattedAmount = formatNumber(initialData.amount.toString());
+            
+            dateObject = initialData.date ? parseInputDate(initialData.date) : new Date();
+            date = formatDateInput(dateObject);
+            displayDate = formatDateDisplay(dateObject);
+            
+            location = initialData.location || '';
+            incomeSource = initialData.cuenta || ''; // Usamos 'cuenta' para 'incomeSource' si así está en Transaction
+            paymentMethod = initialData.paymentMethod || '';
+            invoice = initialData.invoice || '';
+            tags = initialData.tags || '';
+            notes = initialData.notes || '';
         } else {
-            showPayerSuggestions = false;
+            resetForm();
         }
     }
-    
-    // Función para seleccionar un pagador de las sugerencias
-    function selectPayer(payer: string) {
-        description = payer;
-        showPayerSuggestions = false;
+
+    // Actualizar amount (número) cuando formattedAmount (string) cambia
+    $: {
+        amount = parseFormattedNumber(formattedAmount);
     }
-    
-    function closeModal() {
-        dispatch('close');
-    }    
-    
+
+    function resetForm() {
+        description = '';
+        amount = null;
+        formattedAmount = '';
+        dateObject = new Date();
+        date = formatDateInput(dateObject);
+        displayDate = formatDateDisplay(dateObject);
+        location = '';
+        incomeSource = '';
+        paymentMethod = '';
+        invoice = '';
+        tags = '';
+        notes = '';
+        showSourceSuggestions = false;
+        filteredSources = [];
+    }
+
     function handleSubmit() {
-        // Convertir el valor formateado a número para validación
         const numericAmount = parseFormattedNumber(formattedAmount);
         
-        if (description && numericAmount !== null && numericAmount > 0) {            // We'll keep using ISO format in the store, but display in our custom format
-            addTransaction({
+        if (description && numericAmount !== null && numericAmount > 0 && date) {
+            const transactionData: Omit<Transaction, 'id' | 'type'> & { id?: number; type: 'ingreso' } = {
                 description,
-                amount: numericAmount, // Use numericAmount which is guaranteed to be a number
-                date: parseInputDate(date).toISOString(), // Fecha seleccionada
-                type: 'ingreso',
-                // Campos adicionales
+                amount: numericAmount,
+                date: parseInputDate(date).toISOString(),
+                type: 'ingreso', // Tipo fijo para este modal
                 location,
-                cuenta, // Tipo de ingreso
-                paymentMethod, // Recibido a través de
+                cuenta: incomeSource, // Guardamos 'incomeSource' en el campo 'cuenta' de la transacción
+                // subcuenta: '', // Los ingresos podrían no tener subcuenta, o podrías añadirla
+                paymentMethod,
                 invoice,
-                notes
-            });
+                tags,
+                notes,
+                // businessPurpose: '', // Podría no aplicar a ingresos
+            };
+
+            if (initialData && initialData.id) {
+                // Actualizar transacción existente
+                updateTransaction({ ...transactionData, id: initialData.id });
+            } else {
+                // Crear nueva transacción
+                addTransaction(transactionData); // <-- AQUÍ ESTÁ EL PROBLEMA
+            }
             
-            // Limpiar formulario
-            description = '';
-            amount = null;
-            formattedAmount = ''; // Limpiar también el valor formateado
-            dateObject = new Date(); // Reset to current date
-            date = formatDateInput(dateObject); // Reset to current date in input format
-            location = '';
-            cuenta = '';
-            paymentMethod = '';
-            invoice = '';
-            notes = '';
-            
-            // Cerrar modal
             closeModal();
+        } else {
+            alert("Por favor, completa todos los campos obligatorios (*) y asegúrate de que el monto sea válido.");
         }
     }
+
+    function handleDelete() {
+        if (initialData && initialData.id) {
+            if (confirm(`¿Estás seguro de que quieres eliminar el ingreso "${initialData.description}"?`)) {
+                removeTransaction(initialData.id);
+                closeModal();
+            }
+        }
+    }
+
+    function closeModal() {
+        dispatch('close');
+    }
+
+    // Funciones para autocompletar (similar a ExpenseModal, adaptado para 'description' o 'incomeSource')
+    // Aquí un ejemplo simple para 'description'
+    function getUniqueIncomeDescriptions(): string[] {
+        const descriptions: string[] = [];
+        // Asumiendo que $transactions está disponible o se pasa como prop si es necesario
+        // o se accede directamente al store si este modal no es tan genérico.
+        // Por simplicidad, lo omitimos aquí, pero se implementaría similar a ExpenseModal.
+        return descriptions; 
+    }
+
+    function filterIncomeSources(input: string) {
+        // Lógica de filtrado para 'description' o 'incomeSource'
+        // similar a filterProviders en ExpenseModal
+        if (input.length > 0) {
+            // Ejemplo:
+            // filteredSources = getUniqueIncomeDescriptions().filter(desc => desc.toLowerCase().includes(input.toLowerCase()));
+            // showSourceSuggestions = filteredSources.length > 0;
+        } else {
+            showSourceSuggestions = false;
+        }
+    }
+
+    function selectSource(source: string) {
+        description = source; // o incomeSource = source;
+        showSourceSuggestions = false;
+    }
+
 </script>
 
 {#if show}
@@ -164,163 +199,90 @@
     on:keydown={(e) => e.key === 'Escape' && closeModal()}>
     <div class="modal-container" role="document">
         <div class="modal-header">
-            <h2>Registrar Ingreso</h2>
+            <h2>{initialData?.id ? 'Editar Ingreso' : 'Registrar Ingreso'}</h2>
             <button class="close-btn" on:click={closeModal}>&times;</button>
         </div>
         <div class="modal-content">
             <form on:submit|preventDefault={handleSubmit}>
-                <!-- PRIMERA FILA: Opciones y Fecha -->
                 <div class="form-row">
-                    <!-- 1. Opciones (location) -->
                     <div class="form-group">
-                        <label for="location">Opciones</label>
-                        <select 
-                            id="location"
-                            bind:value={location}
-                            required
-                        >
+                        <label for="inc-location">Ubicación</label>
+                        <select id="inc-location" bind:value={location} required>
                             <option value="">Seleccionar...</option>
                             <option value="Casa">Casa</option>
                             <option value="Match Home">Match Home</option>
                         </select>
-                    </div>                    <!-- Fecha (date) -->
+                    </div>
                     <div class="form-group">
-                        <label for="date">Fecha*</label>
+                        <label for="inc-incomeSource">Fuente del Ingreso*</label>
+                        <select id="inc-incomeSource" bind:value={incomeSource} required>
+                            <option value="">Seleccionar fuente...</option>
+                            {#each opcionesFuenteIngreso as opcion}
+                                <option value={opcion}>{opcion}</option>
+                            {/each}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="inc-date">Fecha*</label>
                         <div class="date-input-container">
-                            <input 
-                                type="text" 
-                                id="displayDate"
-                                bind:value={displayDate}
-                                readonly
-                                required
-                                placeholder="dd/mmm/yyyy"
-                            />
-                            <input 
-                                type="date" 
-                                id="date"
-                                bind:value={date}
-                                on:change={updateDisplayDate}
-                                class="date-input-hidden"
-                                required
-                            />
+                            <input type="date" id="inc-date" bind:value={date} on:change={updateDisplayDate} required />
+                            <div class="date-display">{displayDate}</div>
                         </div>
                     </div>
-                </div>
-                
-                <!-- SEGUNDA FILA: Solo Pagó -->
-                <div class="form-row">                    <!-- Pagador (description) -->
-                    <div class="form-group full-width">
-                        <label for="description">Pagó*</label>
-                        <div class="autocomplete-container">
-                            <input 
-                                type="text" 
-                                id="description"
-                                bind:value={description}
-                                on:input={() => filterPayers(description)}
-                                on:focus={() => filterPayers(description)}
-                                on:blur={() => setTimeout(() => showPayerSuggestions = false, 200)}
-                                placeholder="Nombre del pagador"
-                                required
-                            />
-                            {#if showPayerSuggestions}
-                                <div class="suggestions-container" role="listbox">
-                                    {#each filteredPayers as payer}
-                                        <div 
-                                            class="suggestion-item"
-                                            role="option"
-                                            aria-selected={description === payer}
-                                            tabindex="0"
-                                            on:click={() => selectPayer(payer)}
-                                            on:keydown={(e) => e.key === 'Enter' && selectPayer(payer)}
-                                        >
-                                            {payer}
-                                        </div>
-                                    {/each}
-                                </div>
-                            {/if}
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- TERCERA FILA: Valor ($) y Cuenta -->
-                <div class="form-row">
-                    <!-- Valor (amount) -->                    
-                     <div class="form-group">  
-                        <label for="amount">Valor ($)*</label>
-                        <input 
-                            type="text" 
-                            id="amount"
-                            bind:value={formattedAmount}
-                            on:input={(e) => formattedAmount = formatNumber(e.currentTarget ? e.currentTarget.value : '')}
-                            inputmode="decimal"
-                            placeholder="0.00"
-                            required
-                        />
-                    </div>
-                    
-                    <!-- Cuenta (tipo de ingreso) -->
                     <div class="form-group">
-                        <label for="cuenta">Cuenta*</label>
-                        <select 
-                            id="cuenta" 
-                            bind:value={cuenta}
-                            required
-                        >
-                            <option value="">Seleccionar tipo de ingreso...</option>
-                            {#each ingresoA as opcion}
-                                <option value={opcion}>{opcion}</option>
-                            {/each}
-                        </select>
-                    </div>
-                </div>
-                  
-                <!-- CUARTA FILA: Referencia y Método de Pago -->
-                <div class="form-row">
-                    <!-- Referencia (invoice) -->
-                    <div class="form-group">
-                        <label for="invoice">Referencia</label>
-                        <input 
-                            type="text" 
-                            id="invoice"
-                            bind:value={invoice}
-                            placeholder="Número de factura o referencia"
-                        />
-                    </div>
-                    
-                    <!-- Método de Pago (paymentMethod) -->
-                    <div class="form-group">
-                        <label for="paymentMethod">Recibido a través de</label>
-                        <select 
-                            id="paymentMethod"
-                            bind:value={paymentMethod}
-                            required
-                        >
+                        <label for="inc-paymentMethod">Recibido en</label>
+                        <select id="inc-paymentMethod" bind:value={paymentMethod}>
                             <option value="">Seleccionar método...</option>
-                            {#each pagadoCon as opcion}
+                            {#each pagadoCon as opcion} <!-- Reutilizando pagadoCon o podrías tener 'recibidoEn' -->
                                 <option value={opcion}>{opcion}</option>
                             {/each}
                         </select>
                     </div>
                 </div>
-                
-                <!-- QUINTA FILA: Notas adicionales -->
+
                 <div class="form-row">
                     <div class="form-group full-width">
-                        <label for="notes">Notas adicionales</label>
-                        <textarea 
-                            id="notes"
-                            bind:value={notes}
-                            placeholder="Añade notas o detalles"
-                        ></textarea>
+                        <label for="inc-description">Descripción*</label>
+                        <input type="text" id="inc-description" bind:value={description} placeholder="Ej: Salario, Venta de producto X" required />
+                        <!-- Podrías añadir autocompletado aquí si es relevante -->
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="inc-amount">Monto ($)*</label>
+                        <input type="text" id="inc-amount" bind:value={formattedAmount} on:input={(e) => formattedAmount = formatNumber(e.currentTarget ? e.currentTarget.value : '')} inputmode="decimal" placeholder="0.00" required />
+                    </div>
+                    <div class="form-group">
+                        <label for="inc-invoice">Referencia/Factura</label>
+                        <input type="text" id="inc-invoice" bind:value={invoice} placeholder="Número de factura o referencia" />
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label for="inc-tags">Etiquetas</label>
+                        <input type="text" id="inc-tags" bind:value={tags} placeholder="Separadas por comas" />
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label for="inc-notes">Notas adicionales</label>
+                        <textarea id="inc-notes" bind:value={notes} placeholder="Añade notas o detalles"></textarea>
                     </div>
                 </div>
                 
                 <div class="modal-actions">
-                    <button type="button" class="modal-btn btn-cancel" on:click={closeModal}>
-                        Cancelar
-                    </button>
+                    <button type="button" class="modal-btn btn-cancel" on:click={closeModal}>Cancelar</button>
+                    {#if initialData?.id}
+                        <button type="button" class="modal-btn btn-delete" on:click={handleDelete}>Borrar</button>
+                    {/if}
                     <button type="submit" class="modal-btn btn-save">
-                        Guardar Ingreso
+                        {initialData?.id ? 'Guardar Cambios' : 'Guardar Ingreso'}
                     </button>
                 </div>
             </form>
@@ -330,6 +292,7 @@
 {/if}
 
 <style>
+    /* Estilos generales del modal (puedes copiarlos de ExpenseModal.svelte y ajustarlos si es necesario) */
     .modal-overlay {
         position: fixed;
         top: 0;
@@ -346,11 +309,11 @@
     .modal-container {
         background-color: white;
         width: 90%;
-        max-width: 700px;
+        max-width: 700px; /* O el ancho que prefieras */
         max-height: 90vh;
         border-radius: 8px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-        overflow-y: auto;
+        overflow-y: auto; /* Para permitir scroll si el contenido es muy largo */
     }
     
     .modal-header {
@@ -359,7 +322,7 @@
         align-items: center;
         padding: 1rem;
         border-bottom: 1px solid #eee;
-        background-color: var(--primary-color);
+        background-color: var(--primary-color, #2196F3); /* Color primario o un verde para ingresos */
         color: white;
         border-radius: 8px 8px 0 0;
     }
@@ -385,30 +348,33 @@
     form {
         display: flex;
         flex-direction: column;
-        gap: 1rem;
+        gap: 1rem; /* Espacio entre filas del formulario */
     }
     
     .form-row {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); /* Columnas responsivas */
         gap: 1rem;
         width: 100%;
     }
     
     .form-group {
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.5rem; /* O ajusta según el gap de form-row */
     }
     
     .full-width {
-        grid-column: 1 / -1;
+        grid-column: 1 / -1; /* Para que ocupe toda la fila */
     }
-      label {
+
+    label {
         display: block;
         margin-bottom: 0.3rem;
         font-weight: 500;
         color: #555;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
-    }input, select, textarea {
+    }
+
+    input, select, textarea {
         width: 100%;
         padding: 0.7rem;
         border: 1px solid #ddd;
@@ -417,167 +383,77 @@
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
         box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
         transition: border-color 0.2s, box-shadow 0.2s;
-        color: #999999; /* Color gris más tenue para el texto de los inputs */
+        color: #333; /* Color de texto normal para inputs */
         font-weight: 400;
     }
-    
-    input:focus, select:focus, textarea:focus {
-        outline: none;
-        border-color: var(--primary-color);
-        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+    input::placeholder, textarea::placeholder {
+        color: #999;
     }
-      /* Estilos para placeholders */
-    ::placeholder {
-        color: #bbbbbb;
-        opacity: 1; /* Firefox */
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
-        font-weight: 400;
-    }
-    
-    :-ms-input-placeholder {
-        color: #bbbbbb;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
-        font-weight: 400;
-    }
-    
-    ::-ms-input-placeholder {
-        color: #bbbbbb;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
-        font-weight: 400;
-    }
-    
-    textarea {
-        min-height: 100px;
-        resize: vertical;
-    }
-    
-    .modal-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 1rem;
-        margin-top: 1.5rem;
-        padding-top: 1rem;
-        border-top: 1px solid #eee;
-    }
-    
-    .modal-btn {
-        padding: 0.8rem 1.5rem;
-        border: none;
-        border-radius: 4px;
-        font-size: 1rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: background-color 0.2s, transform 0.1s;
-    }
-    
-    .modal-btn:active {
-        transform: scale(0.98);
-    }
-    
-    .btn-cancel {
-        background-color: #e0e0e0;
-        color: #333;
-    }
-    
-    .btn-cancel:hover {
-        background-color: #d0d0d0;
-    }
-    
-    .btn-save {
-        background-color: var(--primary-color);
-        color: white;
-    }
-    
-    .btn-save:hover {
-        background-color: #2980b9;
-    }
-    
-    /* Estilos para autocompletado */
-    .autocomplete-container {
-        position: relative;
-        width: 100%;
-    }
-    
-    .suggestions-container {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        width: 100%;
-        max-height: 200px;
-        overflow-y: auto;
-        background-color: white;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        z-index: 10;
-    }
-    
-    .suggestion-item {
-        padding: 0.5rem 1rem;
-        cursor: pointer;
-    }
-    
-    .suggestion-item:hover {
-        background-color: #f5f5f5;
-    }
-    /* Ocultar flechas de inputs numéricos */
-    /* Chrome, Safari, Edge, Opera */
-    input::-webkit-outer-spin-button,
-    input::-webkit-inner-spin-button {
-        -webkit-appearance: none;
-        margin: 0;
-    }
-      /* Firefox */
-    input[inputmode="decimal"] {
-        -moz-appearance: textfield;
-        appearance: textfield;
-    }
-    
-    /* Estilo para las opciones en selects */
-    option {
-        color: #999999;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
-        font-weight: 400;
-    }
-    
-    /* Primera opción (placeholder) en un tono más claro */
-    option:first-child {
-        color: #bbbbbb;
-    }
-    
-    /* Estilo personalizado para inputs de tipo date */
-    input[type="date"] {
-        color: #999999;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
-        font-weight: 400;
-        padding: 0.7rem;
-        appearance: none; /* Para más control sobre la apariencia */
-    }
-    
-    /* Personalizar el ícono de calendario */
-    input[type="date"]::-webkit-calendar-picker-indicator {
-        opacity: 0.6;
-        cursor: pointer;
-    }    /* Estilos para el selector de fecha personalizado */
+
+    /* Estilos para el input de fecha personalizado */
     .date-input-container {
         position: relative;
         width: 100%;
     }
-    
-    .date-input-container input[type="text"] {
-        width: 100%;
-        padding-right: 2rem; /* Espacio para el ícono de calendario */
-        cursor: pointer;
-        background-color: transparent;
+    .date-input-container input[type="date"] {
+        color: transparent; /* Oculta el texto nativo del input date */
     }
-    
-    .date-input-hidden {
+    .date-input-container input[type="date"]::-webkit-calendar-picker-indicator {
         position: absolute;
+        right: 0.7rem;
         top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        opacity: 0;
+        bottom: 0;
+        margin: auto;
+        height: 20px; /* Ajusta según necesidad */
+        width: 20px; /* Ajusta según necesidad */
+        opacity: 0.6;
         cursor: pointer;
+    }
+    .date-display {
+        position: absolute;
+        top: 50%;
+        left: 0.7rem;
+        transform: translateY(-50%);
+        pointer-events: none;
+        font-size: 1rem;
+        color: #333; /* Color del texto de la fecha mostrada */
+        z-index: 1;
+    }
+
+    .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        margin-top: 1rem;
+    }
+
+    .modal-btn {
+        padding: 0.6rem 1.2rem;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: background-color 0.2s;
+    }
+    .btn-save {
+        background-color: var(--primary-color, #2196F3); /* O un verde para ingresos */
+        color: white;
+    }
+    .btn-save:hover {
+        background-color: var(--primary-color-dark, #1976D2); /* O un verde más oscuro */
+    }
+    .btn-cancel {
+        background-color: #f0f0f0;
+        color: #333;
+    }
+    .btn-cancel:hover {
+        background-color: #e0e0e0;
+    }
+    .btn-delete {
+        background-color: #F44336; /* Rojo */
+        color: white;
+    }
+    .btn-delete:hover {
+        background-color: #D32F2F;
     }
 </style>

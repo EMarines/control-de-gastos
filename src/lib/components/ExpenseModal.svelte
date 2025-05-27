@@ -1,8 +1,10 @@
-<script lang="ts">    import { createEventDispatcher } from 'svelte';
-    import { addTransaction, transactions } from '../stores/transactions';
+<script lang="ts">
+    import { createEventDispatcher } from 'svelte';
+    import { addTransaction, updateTransaction, removeTransaction, transactions, type Transaction } from '../stores/transactions'; // Importaciones actualizadas
     import { cuentaCasa, cuentaMatchHome, gastosCasa, gastosMatchHome, servicios, transporte, escuela, salud, pagadoCon, pagadoPor } from '../data/parameters';
     
     export let show = false;
+    export let initialData: Transaction | null = null; // Para recibir la operación a editar
     
     // Mapa para relacionar cuentas con sus respectivas subcuentas
     const cuentaToSubcuentaMap: Record<string, string[]> = {
@@ -14,13 +16,13 @@
         "Gastos Oficina": gastosMatchHome
     };
     
-    const dispatch = createEventDispatcher();    // Datos del formulario
+    const dispatch = createEventDispatcher();
+    // Datos del formulario
     let description: string = '';
     let amount: number | null = null; // Valor numérico real
     let formattedAmount: string = ''; // Versión formateada para mostrar
     let filteredProviders: string[] = [];
     let showProviderSuggestions: boolean = false;
-    
     // Función para formatear números con comas cada 3 dígitos
     function formatNumber(value: string): string {
         // Eliminar caracteres no numéricos excepto punto decimal
@@ -49,11 +51,6 @@
         const number = parseFloat(numberStr);
         return isNaN(number) ? null : number;
     }
-    
-    // Actualizar amount cuando cambia formattedAmount
-    $: {
-        amount = parseFormattedNumber(formattedAmount);
-    }
       // Formatear fecha para mostrar como dd/mmm/yyyy
     function formatDateDisplay(date: Date): string {
         const day = date.getDate().toString().padStart(2, '0');
@@ -71,12 +68,13 @@
     function parseInputDate(dateString: string): Date {
         return new Date(dateString);
     }
-      let dateObject: Date = new Date(); // Objeto Date actual
+
+    let dateObject: Date = new Date(); // Objeto Date actual
     let date: string = formatDateInput(dateObject); // Formato YYYY-MM-DD para input type="date"
     let displayDate: string = formatDateDisplay(dateObject); // Formato dd/mmm/yyyy para mostrar
     
-    // Actualizar la fecha mostrada cuando cambie la fecha seleccionada
     function updateDisplayDate() {
+        // Actualizar la fecha mostrada cuando cambie la fecha seleccionada en el input
         dateObject = parseInputDate(date);
         displayDate = formatDateDisplay(dateObject);
     }    // Datos adicionales
@@ -88,9 +86,11 @@
     let tags: string = '';
     let notes: string = '';
     let businessPurpose: string = ''; // Valor vacío para Pagado por
-      // Obtener opciones de cuenta según la ubicación seleccionada
+
+    // Obtener opciones de cuenta según la ubicación seleccionada
     $: opcionesCuenta = location === 'Casa' ? cuentaCasa : cuentaMatchHome;    // Función para obtener las opciones de subcuenta según la cuenta seleccionada
     function getSubcuentaOptions(cuentaSeleccionada: string): string[] {
+
         // Buscar en el mapa si existe una configuración específica para esta cuenta
         if (cuentaToSubcuentaMap[cuentaSeleccionada]) {
             return cuentaToSubcuentaMap[cuentaSeleccionada];
@@ -102,7 +102,7 @@
     
     // Obtener opciones de subcuenta según la cuenta seleccionada
     $: opcionesSubcuenta = getSubcuentaOptions(cuenta);
-      // Reiniciar cuenta cuando cambia la ubicación
+    // Reiniciar cuenta cuando cambia la ubicación
     $: {
         if (location === 'Casa') {
             if (cuenta && !cuentaCasa.includes(cuenta)) {
@@ -130,7 +130,40 @@
             }
         }
     }
-      // Función para obtener proveedores únicos de las transacciones existentes
+
+    // Lógica reactiva para poblar/resetear el formulario
+    $: if (show) {
+        if (initialData) {
+            description = initialData.description || '';
+            amount = initialData.amount;
+            formattedAmount = formatNumber(initialData.amount.toString()); // Formatear el monto inicial
+            
+            dateObject = initialData.date ? parseInputDate(initialData.date) : new Date();
+            date = formatDateInput(dateObject);
+            displayDate = formatDateDisplay(dateObject);
+            
+            location = initialData.location || '';
+            cuenta = initialData.cuenta || '';
+            subcuenta = initialData.subcuenta || ''; // Asumiendo que 'subcuenta' existe en Transaction
+            paymentMethod = initialData.paymentMethod || '';
+            invoice = initialData.invoice || '';
+            tags = initialData.tags || ''; // Asumiendo que 'tags' existe en Transaction
+            notes = initialData.notes || '';
+            businessPurpose = initialData.businessPurpose || ''; // Asumiendo que 'businessPurpose' existe en Transaction
+        } else {
+            resetForm();
+        }
+    } else {
+        // Si el modal no se muestra, también es buena idea resetear por si acaso
+        // o si se quiere que mantenga el estado la próxima vez que se abra sin initialData.
+        // Por ahora, lo dejamos así, el reset principal ocurre cuando show es true y no hay initialData.
+    }
+
+    // Actualizar amount (número) cuando formattedAmount (string) cambia
+    $: {
+        amount = parseFormattedNumber(formattedAmount);
+    }
+    // Función para obtener proveedores únicos de las transacciones existentes
     function getUniqueProviders(): string[] {
         const providers: string[] = [];
         
@@ -166,45 +199,87 @@
     
     function closeModal() {
         dispatch('close');
-    }    function handleSubmit() {
+        // No es estrictamente necesario resetear aquí si el bloque $: lo maneja
+    }
+
+    function resetForm() {
+        description = '';
+        amount = null;
+        formattedAmount = '';
+        dateObject = new Date();
+        date = formatDateInput(dateObject);
+        displayDate = formatDateDisplay(dateObject);
+        location = '';
+        cuenta = '';
+        subcuenta = '';
+        paymentMethod = '';
+        invoice = '';
+        tags = '';
+        notes = '';
+        businessPurpose = '';
+        showProviderSuggestions = false;
+        filteredProviders = [];
+    }
+
+    function handleSubmit() {
         // Convertir el valor formateado a número para validación
         const numericAmount = parseFormattedNumber(formattedAmount);
         
-        if (description && numericAmount !== null && numericAmount > 0) {            // We'll keep using ISO format in the store, but display in our custom format
-            addTransaction({
-                description,
-                amount: numericAmount, // Use numericAmount which is guaranteed to be a number
-                date: parseInputDate(date).toISOString(), // Fecha seleccionada
-                type: 'egreso',
-                // Campos adicionales
-                location,
-                cuenta, // Tipo de cuenta principal
-                subcuenta, // Subcuenta específica
-                paymentMethod,
-                invoice,
-                tags,
-                notes,
-                businessPurpose
-            });
+        if (description && numericAmount !== null && numericAmount > 0 && date) {
+            if (initialData && initialData.id) {
+                // Actualizar transacción existente
+                const transactionData: Transaction = { // Tipo Transaction completo para actualizar
+                    id: initialData.id, // Incluir el ID existente
+                    description,
+                    amount: numericAmount,
+                    date: parseInputDate(date).toISOString(),
+                    type: 'egreso',
+                    location,
+                    cuenta,
+                    subcuenta,
+                    paymentMethod,
+                    invoice,
+                    tags,
+                    notes,
+                    businessPurpose
+                };
+                updateTransaction({ ...transactionData, id: initialData.id });
+            } else {
+                // Crear nueva transacción
+                // Definir transactionData aquí, explícitamente sin 'id'
+                const transactionData: Omit<Transaction, 'id'> = {
+                    // No se incluye 'id' aquí
+                    description,
+                    amount: numericAmount,
+                    date: parseInputDate(date).toISOString(),
+                    type: 'egreso',
+                    location,
+                    cuenta,
+                    subcuenta,
+                    paymentMethod,
+                    invoice,
+                    tags,
+                    notes,
+                    businessPurpose
+                };
+                addTransaction(transactionData); // El store se encarga de generar el ID
+            }
             
-            // Limpiar formulario
-            description = '';
-            amount = null; // Usando null para un campo de número vacío
-            formattedAmount = ''; // Limpiar también el valor formateado
-            dateObject = new Date(); // Reset to current date
-            date = formatDateInput(dateObject); // Reset to current date in input format
-            displayDate = formatDateDisplay(dateObject); // Actualizar la fecha mostrada
-            location = '';
-            cuenta = '';
-            subcuenta = '';
-            paymentMethod = '';
-            invoice = '';
-            tags = '';
-            notes = '';
-            businessPurpose = '';
-            
-            // Cerrar modal
             closeModal();
+            // El reseteo del formulario se maneja por el bloque reactivo $: cuando 'show' cambia o 'initialData' es null.
+        } else {
+            // Aquí podrías añadir lógica para mostrar errores de validación al usuario
+            console.error("Error de validación en el formulario", { description, numericAmount, date });
+            alert("Por favor, completa todos los campos obligatorios (*) y asegúrate de que el monto sea válido.");
+        }
+    }
+
+    function handleDelete() {
+        if (initialData && initialData.id) {
+            if (confirm(`¿Estás seguro de que quieres eliminar la operación "${initialData.description}"?`)) {
+                removeTransaction(initialData.id);
+                closeModal();
+            }
         }
     }
 </script>
@@ -219,7 +294,7 @@
     on:keydown={(e) => e.key === 'Escape' && closeModal()}>
     <div class="modal-container" role="document">
         <div class="modal-header">
-            <h2>Registrar Movimiento</h2>
+            <h2>{initialData?.id ? 'Editar Egreso' : 'Registrar Egreso'}</h2>
             <button class="close-btn" on:click={closeModal}>&times;</button>
         </div>
         <div class="modal-content">
@@ -403,8 +478,11 @@
                     <button type="button" class="modal-btn btn-cancel" on:click={closeModal}>
                         Cancelar
                     </button>
+                    {#if initialData?.id}
+                        <button type="button" class="modal-btn btn-delete" on:click={handleDelete}>Borrar</button>
+                    {/if}
                     <button type="submit" class="modal-btn btn-save">
-                        Guardar Movimiento
+                        {initialData?.id ? 'Guardar Cambios' : 'Guardar Movimiento'}
                     </button>
                 </div>
             </form>
@@ -604,5 +682,20 @@
         color: #999999;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
         z-index: 1;
+    }
+
+    .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        margin-top: 1rem;
+    }
+
+    .btn-delete {
+        background-color: #F44336; /* Rojo */
+        color: white;
+    }
+    .btn-delete:hover {
+        background-color: #D32F2F;
     }
 </style>

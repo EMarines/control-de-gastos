@@ -1,4 +1,4 @@
-export const cuentaCasa = [
+export const cuentaCasa: string[] = [
     "Egresos Casa",
     "Servicios",
     "Egresos Transporte",
@@ -6,7 +6,7 @@ export const cuentaCasa = [
     "Salud"
   ]
 
-export const cuentaMatchHome = [
+export const cuentaMatchHome: string[] = [
     "Egresos Oficina",
     "Servicios",
     "Egresos Transporte",
@@ -16,7 +16,7 @@ export const cuentaMatchHome = [
     "Otros"
   ]
 
-   export const gastosCasa = [
+   export const gastosCasa: string[] = [
     "Mandado",
     "Restaurantes",
     "Diversión",
@@ -27,7 +27,7 @@ export const cuentaMatchHome = [
     "Otros"
   ]
 
-  export const gastosMatchHome = [
+  export const gastosMatchHome: string[] = [
    "Papeleria",
     "Limpieza",
     "Publicidad",
@@ -38,7 +38,7 @@ export const cuentaMatchHome = [
     "Otros"
   ]
 
-  export const servicios = [
+  export const servicios: string[] = [
     "CFE",
     "JMAS" ,   
     "ECOGAS",
@@ -47,7 +47,7 @@ export const cuentaMatchHome = [
     "MEGACABLE",
   ]
 
-  export const transporte = [
+  export const transporte: string[] = [
     "Gasolina",
     "Mto. Previentivo",
     "Mto. Correctivo",
@@ -56,28 +56,28 @@ export const cuentaMatchHome = [
     "Otros"
   ]
 
-  export const escuela = [
+  export const escuela: string[] = [
     "Colegiatura",
     "Materiales",
     "Cooperaciones" ,
     "Otros" 
   ]
 
-  export const salud = [
+  export const salud: string[] = [
     "Medicamentos",
     "Consultas",
     "Seguros",
     "Otros"
   ]
 
-  export const pagadoPor = [
+  export const pagadoPor: string[] = [
     "E",
     "C",
     "S",
     "O"
   ]
 
-  export const gastosOficina = [
+  export const gastosOficina: string[] = [
     "Papeleria",
     "Limpieza",
     "Publicidad",
@@ -86,7 +86,7 @@ export const cuentaMatchHome = [
     "Consumibles"
   ]
 
-  export const pagadoCon = [
+  export const pagadoCon: string[] = [
     "TDS 6409",
     "Efectivo",
     "TDB 1623",
@@ -94,11 +94,19 @@ export const cuentaMatchHome = [
     "Otro",
   ]
 
-  export const ingresoA = [
+  export const ingresosCasa: string[] = [
     "Comisiones",
     "Apartado",
     "Adeudo Anterior",
     "Otro"   
   ]
+
+  export const ingresosMatchHome: string[] = [
+    "Comisiones",
+    "Apartado",
+    "Adeudo Anterior",
+    "Otro"   
+  ]
+
 
 

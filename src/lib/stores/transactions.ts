@@ -1,4 +1,15 @@
 import { writable } from 'svelte/store';
+// src/lib/stores/transactions.ts
+
+// Asegúrate de que updateTransaction esté definida Y EXPORTADA así:
+export function updateTransaction(updatedTransaction: Transaction) {
+    transactions.update(items =>
+        items.map(item => (item.id === updatedTransaction.id ? updatedTransaction : item))
+    );
+}
+
+// ... resto de tu store ...
+
 
 export type TransactionType = 'ingreso' | 'egreso'; // Changed 'gasto' to 'egreso'
 
@@ -35,7 +46,7 @@ console.log("[transactions.ts] Datos crudos importados de transactionData.js:", 
 
 // Comprobar que los datos se están importando correctamente
 if (!transactionsDataFromFile || !Array.isArray(transactionsDataFromFile)) {
-    console.error('[transactions.ts] Error: transactionsData.js no exporta un array o está vacío.', transactionsDataFromFile);
+    console.error('[transactions.ts] Error: transactionData.js no exporta un array o está vacío.', transactionsDataFromFile);
     // Considerar asignar un array vacío a initialTransactions si esto ocurre
 } else {
     console.log(`[transactions.ts] Iniciando procesamiento de ${transactionsDataFromFile.length} registros de transactionData.js...`);
@@ -149,6 +160,7 @@ initialTransactions.forEach(t => {
 });
 console.log('[transactions.ts] Ubicaciones encontradas en las transacciones cargadas:', Array.from(locations));
 
+// Tu store principal - Esta es la única declaración y exportación de 'transactions'
 export const transactions = writable<Transaction[]>(initialTransactions);
 
 export function addTransaction(transaction: Omit<Transaction, 'id'>) {

@@ -1,11 +1,11 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { transactions, type Transaction } from '../stores/transactions'; // Importar el store y el tipo
-
-    import { formatCurrency } from '../util/formatters'; // Importar la función de formato
-    console.log($transactions);
+    import { transactions, type Transaction, removeTransaction, updateTransaction, addTransaction } from '../stores/transactions'; // Importar el store y el tipo
+    import IncomeModal from './IncomeModal.svelte'; // Asegúrate que la ruta sea correcta
+    import ExpenseModal from './ExpenseModal.svelte'; // Asegúrate que la ruta sea correcta
     
-    // Usar el tipo Transaction del store. Renombrar localmente si se prefiere, pero Transaction es claro.
+    import { formatCurrency } from '../util/formatters'; // Importar la función de formato
+    
     type Operacion = Transaction; 
     
     let operaciones: Operacion[] = [];
@@ -32,6 +32,10 @@
     let totalIngresos: number = 0;
     let totalGastos: number = 0;
     let saldo: number = 0;
+
+    // Estado para la edición
+    let editingOperation: Operacion | null = null;
+    let modalTypeToShow: 'income' | 'expense' | null = null;
     
     // Formatear fecha para mostrarla
     function formatearFecha(fechaISO: string): string {
@@ -112,9 +116,7 @@
 
     // Procesar datos del store de transacciones
     function procesarTransacciones(transaccionesDelStore: Transaction[]): void {
-        console.log('[Operaciones.svelte] Datos recibidos del store en procesarTransacciones:', JSON.parse(JSON.stringify(transaccionesDelStore)));
         operaciones = [...transaccionesDelStore]; // Crear una copia para evitar modificar el store directamente si no es necesario
-        console.log(`[Operaciones] Procesando ${operaciones.length} transacciones del store.`);
 
         // Extraer cuentas y ubicaciones únicas para los filtros
         const cuentasSet = new Set<string>();
@@ -150,10 +152,25 @@
         
         filtrarOperaciones();
     }
+
+  // En Operaciones.svelte
+  function handleRowDoubleClick(operation: Operacion): void {
+      editingOperation = operation;
+      modalTypeToShow = operation.type === 'ingreso' ? 'income' : 'expense';
+  }
+  
+
+    function handleModalClose(): void {
+        modalTypeToShow = null;
+        editingOperation = null; // Limpiar la operación en edición al cerrar
+    }
     
     // Ejecutar filtros cada vez que cambian
     $: {
         if (datosCargadosInicialmente) { // Solo filtrar si los datos ya se cargaron una vez
+            // No es necesario listar todas las dependencias aquí si la función filtrarOperaciones
+            // ya se llama cuando cambian. Svelte detectará el cambio en las variables de filtro.
+            // Sin embargo, para asegurar la reactividad explícita, puedes dejarlas.
             filtroTipo;
             filtroCuenta;
             filtroUbicacion;
@@ -170,6 +187,20 @@
         return unsubscribe; // Devolver la función de desuscripción para limpiar al desmontar
     });
 </script>
+
+{#if modalTypeToShow === 'income'}
+    <IncomeModal 
+        show={true} 
+        initialData={editingOperation} 
+        on:close={handleModalClose} 
+    />
+{:else if modalTypeToShow === 'expense'}
+    <ExpenseModal 
+        show={true} 
+        initialData={editingOperation} 
+        on:close={handleModalClose} 
+    />
+{/if}
 
 <div class="operaciones-container">
     <h2>Operaciones</h2>
@@ -279,7 +310,12 @@
                 </thead>
                 <tbody>
                     {#each operacionesFiltradas as op}
-                        <tr class:ingreso={op.type === 'ingreso'} class:egreso={op.type === 'egreso'}>
+                        <tr 
+                            class:ingreso={op.type === 'ingreso'} 
+                            class:egreso={op.type === 'egreso'} 
+                            on:click={() => handleRowDoubleClick(op)} 
+                            
+                            style="cursor: pointer;">
                             <td>{formatearFecha(op.date)}</td>
                             <td class="descripcion-celda">
                                 <div class="descripcion-contenido">
