@@ -1,7 +1,12 @@
 <script lang="ts">
     import { transactions, removeTransaction, type Transaction } from '../stores/transactions';
-    import { formatCurrency } from '../util/formatters'; // Importar la función de formato
+    // import { formatCurrency } from '../util/formatters'; // TEMPORALMENTE COMENTADO
     
+    // VERSIÓN DE PRUEBA SÚPER SIMPLE DE formatCurrency
+    function formatCurrency(value: number | null | undefined): string {
+        if (typeof value !== 'number' || isNaN(value)) return 'Inválido';
+        return `$${value.toFixed(2)}`;
+    }
     // Formatear fecha
     function formatDate(dateStr: string): string {
         const date = new Date(dateStr);
@@ -18,7 +23,10 @@
         {#if $transactions.length === 0}
             <p class="empty-message">No hay transacciones registradas</p>
         {:else}
-            {#each $transactions.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()) as transaction}
+            {#each $transactions.sort((a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime()) as transaction (transaction.id)}
+                {@const formattedAmount = formatCurrency(transaction.amount)}
+                <!-- El console.log que estaba en el svelte:component problemático se puede mantener aquí si es necesario -->
+                {@const _ = console.log(`[TransactionHistory] Iterando: ID=${transaction.id}, Desc=${transaction.description}, Amount=${transaction.amount}, Type=${typeof transaction.amount}, Formatted=${formattedAmount}`)}
                 <div class="transaction-item" class:income={transaction.type === 'ingreso'} class:expense={transaction.type === 'egreso'}>
                     <div class="transaction-details">
                         <h3>{transaction.description}</h3>
@@ -28,7 +36,7 @@
                         <p class="transaction-date">{formatDate(transaction.date)}</p>
                     </div>
                     <div class="transaction-amount">
-                        <p class="amount">{transaction.type === 'ingreso' ? '+' : '-'}{formatCurrency(transaction.amount, '')}</p>
+                        <p class="amount">{transaction.type === 'ingreso' ? '+' : '-'}{formattedAmount}</p>
                         <button 
                             class="btn btn-sm btn-danger" 
                             on:click={() => removeTransaction(transaction.id)}
