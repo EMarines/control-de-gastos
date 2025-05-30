@@ -1,7 +1,26 @@
-import { writable } from 'svelte/store';
-// src/lib/stores/transactions.ts
-import { db } from '../firebase'; // Asegúrate que la ruta a tu firebase.ts sea correcta
-import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore'; // Funciones de Firestore
+import { writable, get } from 'svelte/store';
+import { db } from '../firebase';
+import { 
+    collection, 
+    addDoc, 
+    serverTimestamp, 
+    query, 
+    orderBy, 
+    onSnapshot, 
+    doc, 
+    setDoc, 
+    deleteDoc, 
+    getDocs,
+    limit,
+    startAfter 
+} from 'firebase/firestore'; // Funciones de Firestore
+import { 
+    cacheTransactions, 
+    getCachedTransactions, 
+    updateCachedTransaction,
+    deleteCachedTransaction,
+    getLastCachedDocId
+} from '../services/idb-service'; // Servicio de caché con IndexedDB
 
 // Asegúrate de que updateTransaction esté definida Y EXPORTADA así:
 export async function updateTransaction(transactionData: Transaction): Promise<void> {
@@ -12,13 +31,30 @@ export async function updateTransaction(transactionData: Transaction): Promise<v
     try {
         const transactionDocRef = doc(db, 'transactions', transactionData.id);
         // Usamos setDoc con merge:true para actualizar solo los campos proporcionados
-        // y no sobrescribir todo el documento si transactionData es parcial.
-        // Asegúrate de que transactionData contenga todos los campos que quieres persistir.
         await setDoc(transactionDocRef, transactionData, { merge: true });
-        console.log('[transactions.ts] Transacción actualizada en Firebase con ID: ', transactionData.id);
-        // onSnapshot se encargará de actualizar el store local cuando detecte el cambio en Firebase.
-        // La actualización local optimista es opcional:
-        // transactions.update(items => items.map(item => (item.id === transactionData.id ? transactionData : item)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        
+        // Actualizar también en la caché
+        await updateCachedTransaction(transactionData);
+        
+        // Actualización optimista del store para mejor UX
+        transactions.update(items => {
+            const updatedItems = items.map(item => 
+                item.id === transactionData.id ? transactionData : item
+            );
+            
+            // Re-ordenar después de actualizar (importante si cambió la fecha)
+            updatedItems.sort((a, b) => {
+                const dateA = new Date(a.date).getTime();
+                const dateB = new Date(b.date).getTime();
+                return dateB - dateA;
+            });
+            
+            return updatedItems;
+        });
+        
+        if (import.meta.env.DEV) {
+            console.log('[transactions.ts] Transacción actualizada en Firebase con ID: ', transactionData.id);
+        }
     } catch (error) {
         console.error('[transactions.ts] Error al actualizar la transacción en Firebase: ', error);
         throw error; // Propagar el error para que el componente lo maneje
@@ -56,157 +92,287 @@ interface TransactionInput extends Partial<Transaction> {
     [key: string]: any; // Allow any other properties that might exist in the JSON
 }
 
-// Importar datos directamente del archivo JS para evitar problemas de formato JSON
-import transactionsDataFromFile from '../data/transactionData.js'; // Renombrado para claridad
+// Ya no importamos datos locales, usamos solo Firestore
+// Nota: El comentario siguiente se deja como referencia de la estructura de datos
+// interface TransactionInput extends Partial<Transaction> {
+//     formattedAmount?: string | number;
+//     [key: string]: any;
+// }
 
-console.log("[transactions.ts] Datos crudos importados de transactionData.js:", JSON.parse(JSON.stringify(transactionsDataFromFile)));
+// Desactivamos la importación local ya que ahora usamos Firestore
+// import transactionsDataFromFile from '../data/transactionData.js';
 
-// Comprobar que los datos se están importando correctamente
-if (!transactionsDataFromFile || !Array.isArray(transactionsDataFromFile)) {
-    console.error('[transactions.ts] Error: transactionData.js no exporta un array o está vacío.', transactionsDataFromFile);
-    // Considerar asignar un array vacío a initialTransactions si esto ocurre
-} else {
-    console.log(`[transactions.ts] Iniciando procesamiento de ${transactionsDataFromFile.length} registros de transactionData.js...`);
+if (import.meta.env.DEV) {
+    console.log('[transactions.ts] Usando solo datos de Firestore para mejorar rendimiento');
 }
 
-// initialTransactions cargadas desde el archivo JS.
-// Esto puede servir como un estado inicial antes de que Firebase cargue,
-// o podrías optar por un array vacío y depender completamente de Firebase.
-let localInitialTransactions: Transaction[] = (transactionsDataFromFile as TransactionInput[])
-    .map((item, index) => {
-        if (!item) {
-            console.warn(`[transactions.ts] Item nulo o undefined en transactionData.js en el índice ${index}. Omitiendo.`);
-            return null; // Se filtrará más tarde
-        }
+// Configuración para la paginación
+const PAGE_SIZE = 50; // Número de transacciones por página
+export const isLoadingMore = writable<boolean>(false);
+export const hasMoreData = writable<boolean>(true);
+export const isInitialDataLoaded = writable<boolean>(false);
+// Definir el tipo para el documento de paginación de Firestore
+let lastVisibleDoc: any = null; // Último documento visible para paginación
 
-        console.log(`[transactions.ts] Procesando item ${index}:`, JSON.parse(JSON.stringify(item)));
+// Tu store principal. Inicialmente está vacío, se llenará con datos de Firestore
+export const transactions = writable<Transaction[]>([]);
 
-        // 1. Procesar Amount (dependiendo únicamente de item.amount)
-        let finalAmount = 0;
-        const rawAmount = item.amount;
-
-        console.log(`  [Item ${index}] Valor inicial de rawAmount: "${rawAmount}" (tipo: ${typeof rawAmount})`);
-
-        if (typeof rawAmount === 'number' && !isNaN(rawAmount)) {
-            finalAmount = rawAmount;
-            console.log(`  [Item ${index}] Decisión: rawAmount es número válido. finalAmount = ${finalAmount}`);
-        } else if (typeof rawAmount === 'string') {
-            // Limpiar la cadena por si acaso aún contiene formatos no numéricos.
-            const cleaned = (rawAmount as string).replace(/[$€£¥,]/g, '').trim();
-            if (cleaned === "") {
-                finalAmount = 0;
-                console.log(`  [Item ${index}] Decisión: rawAmount era cadena vacía (o solo símbolos/comas después de limpiar). finalAmount = ${finalAmount}`);
-            } else {
-                const parsed = parseFloat(cleaned);
-                if (!isNaN(parsed)) {
-                    finalAmount = parsed;
-                    console.log(`  [Item ${index}] Decisión: rawAmount (string) parseado exitosamente ("${cleaned}"). finalAmount = ${finalAmount}`);
-                } else {
-                    // finalAmount permanece 0 si el parseo falla
-                    console.warn(`  [Item ${index}] Decisión: rawAmount (string) no se pudo parsear a número ("${cleaned}"). finalAmount = ${finalAmount}`);
-                }
-            }
-        } else {
-            // finalAmount permanece 0 si rawAmount no es ni número ni string, o es un tipo inesperado.
-            console.warn(`  [Item ${index}] Decisión: rawAmount no es ni número ni string, o es inválido. finalAmount = ${finalAmount}`);
-        }
-
-        // 2. Normalizar Type
-        let normalizedType: TransactionType | null = null;
-        if (item.type) {
-            const typeStr = String(item.type).toLowerCase().trim();
-            if (typeStr === 'egreso' || typeStr === 'gasto') { // 'gasto' para compatibilidad
-                normalizedType = 'egreso';
-            } else if (typeStr === 'ingreso') {
-                normalizedType = 'ingreso';
-            } else {
-                console.warn(`[transactions.ts] Item ${index}: Tipo de transacción no reconocido: "${item.type}".`);
-            }
-        } else {
-            console.warn(`[transactions.ts] Item ${index}: No tiene campo 'type'.`);
-        }
-
-        // 3. Validar datos esenciales (type y date)
-        if (!normalizedType || !item.date) {
-            console.warn(`[transactions.ts] Omitiendo item ${index} por falta de tipo normalizado o fecha. Tipo original: "${item.type}", Fecha: "${item.date}"`);
-            return null; // Se filtrará más tarde
-        }
-
-        // 4. Generar ID único si no existe o está vacío
-        const uniqueId = (item.id && String(item.id).trim()) ? String(item.id).trim() : `${Date.now()}-${Math.random().toString(36).substring(2)}-${index}`;
-
-        // Crear objeto de transacción normalizado
-        const transactionObject: Transaction = {
-            id: uniqueId,
-            description: item.description || 'Sin descripción',
-            amount: finalAmount,
-            date: String(item.date), // Asegurar que date sea string
-            type: normalizedType,
-            location: item.location || '',
-            cuenta: (item.cuenta || '').trim(),
-            subcuenta: (item.subcuena || item.subcuenta || '').trim(), // Manejar posibles variaciones en el nombre del campo
-            paymentMethod: item.paymentMethod || '',
-            invoice: item.invoice || '',
-            tags: item.tags || '',
-            notes: item.notes || '',
-            businessPurpose: item.businessPurpose || item['PagadbusinessPurposeo Por:'] || '', // Manejar posibles variaciones
-            category: item.category || '' // Mantener compatibilidad con datos antiguos
-        };
-        console.log(`  [Item ${index}] Objeto final procesado:`, JSON.parse(JSON.stringify(transactionObject)));
-        return transactionObject;
-    })
-    .filter(transaction => transaction !== null) as Transaction[]; // Filtrar los items que se marcaron como null
-
-// Temporalmente eliminado: Filtro para transacciones con monto cero.
-// .filter(transaction => {
-//     const hasAmount = transaction.amount > 0;
-//     if (!hasAmount) {
-//         console.log('[transactions.ts] Omitiendo transacción con monto cero o negativo:', transaction.description, transaction.amount);
-//     }
-//     return hasAmount;
-// });
-
-// Estadísticas para depuración
-const ingresosIniciales = localInitialTransactions.filter(t => t.type === 'ingreso').length;
-const egresosIniciales = localInitialTransactions.filter(t => t.type === 'egreso').length;
-console.log(`[transactions.ts] Transacciones iniciales procesadas desde archivo: ${localInitialTransactions.length} (Ingresos: ${ingresosIniciales}, Egresos: ${egresosIniciales})`);
-
-// Log de ubicaciones para debug
-const locations = new Set<string>();
-localInitialTransactions.forEach(t => {
-    if (t.location) {
-        locations.add(t.location);
-    }
-});
-console.log('[transactions.ts] Ubicaciones encontradas en las transacciones cargadas:', Array.from(locations));
-
-// Tu store principal. Inicialmente puede estar vacío o con los datos del archivo local.
-// Firebase lo actualizará.
-export const transactions = writable<Transaction[]>([]); // Empezar vacío o con localInitialTransactions
-
+// Referencia a la colección de transacciones en Firestore
 const transactionsCollectionRef = collection(db, 'transactions');
 
-// --- Cargar y Sincronizar con Firebase ---
-// Crear una consulta para obtener las transacciones, ordenadas por fecha (más recientes primero)
-const q = query(transactionsCollectionRef, orderBy('date', 'desc'));
+// Crear una consulta para obtener las transacciones más recientes (primera página)
+export async function loadFirstPage(): Promise<void> {
+    if (get(isLoadingMore)) return;
+    
+    isLoadingMore.set(true);
+    hasMoreData.set(true);
+    isInitialDataLoaded.set(false);
+    
+    try {
+        // Intentar cargar desde caché primero
+        const cachedTransactions = await getCachedTransactions();
+        
+        if (cachedTransactions && cachedTransactions.length > 0) {
+            // Usar datos de caché
+            transactions.set(cachedTransactions);
+            
+            // Determinar si hay más datos para cargar basado en el tamaño de la caché
+            hasMoreData.set(cachedTransactions.length >= PAGE_SIZE);
+            
+            // Actualizar último documento visible para paginación
+            const lastCachedDocId = await getLastCachedDocId();
+            if (lastCachedDocId) {
+                try {
+                    const lastDocRef = doc(transactionsCollectionRef, lastCachedDocId);
+                    lastVisibleDoc = {
+                        data: () => cachedTransactions[cachedTransactions.length - 1],
+                        id: lastCachedDocId,
+                        ref: lastDocRef
+                    } as any;
+                } catch (error) {
+                    console.error('[transactions.ts] Error al establecer último documento desde caché:', error);
+                }
+            }
+            
+            if (import.meta.env.DEV) {
+                console.log(`[transactions.ts] Cargadas ${cachedTransactions.length} transacciones desde caché`);
+            }
+        } else {
+            // Cargar desde Firestore si no hay caché o está expirada
+            const firstPageQuery = query(
+                transactionsCollectionRef, 
+                orderBy('date', 'desc'),
+                limit(PAGE_SIZE)
+            );
+            
+            const querySnapshot = await getDocs(firstPageQuery);
+            const firebaseTransactions: Transaction[] = [];
+            
+            querySnapshot.forEach((doc) => {
+                const data = doc.data();
+                // Asegurar que todos los campos necesarios estén presentes
+                firebaseTransactions.push({ 
+                    ...data,
+                    id: doc.id,
+                    description: data.description || 'Sin descripción',
+                    amount: typeof data.amount === 'number' ? data.amount : 0,
+                    date: data.date || new Date().toISOString().split('T')[0],
+                    type: data.type || 'egreso'
+                } as Transaction);
+            });
+            
+            // Asegurar que los datos estén ordenados correctamente
+            firebaseTransactions.sort((a, b) => {
+                const dateA = new Date(a.date).getTime();
+                const dateB = new Date(b.date).getTime();
+                return dateB - dateA; // Orden descendente (más reciente primero)
+            });
+            
+            // Actualizar el último documento visible para la próxima página
+            if (querySnapshot.docs.length > 0) {
+                lastVisibleDoc = querySnapshot.docs[querySnapshot.docs.length - 1];
+            }
+            
+            // Guardar en caché para futuras cargas
+            await cacheTransactions(firebaseTransactions);
+            
+            hasMoreData.set(querySnapshot.docs.length === PAGE_SIZE);
+            transactions.set(firebaseTransactions);
+            
+            if (import.meta.env.DEV) {
+                console.log(`[transactions.ts] Primera página cargada desde Firestore (${firebaseTransactions.length} transacciones)`);
+            }
+        }
+    } catch (error) {
+        console.error('[transactions.ts] Error al cargar la primera página:', error);
+    } finally {
+        isLoadingMore.set(false);
+        isInitialDataLoaded.set(true);
+    }
+}
 
-const unsubscribe = onSnapshot(q, (querySnapshot) => {
-    const firebaseTransactions: Transaction[] = [];
+// Función para cargar más transacciones (siguiente página)
+/**
+ * Carga más transacciones (siguiente página) y las añade al store
+ * Usa cache para mejorar rendimiento y reducir consultas a Firestore
+ */
+export async function loadMoreTransactions(): Promise<void> {
+    if (get(isLoadingMore) || !get(hasMoreData) || !lastVisibleDoc) return;
+    
+    isLoadingMore.set(true);
+    
+    try {
+        const nextQuery = query(
+            transactionsCollectionRef,
+            orderBy('date', 'desc'),
+            startAfter(lastVisibleDoc),
+            limit(PAGE_SIZE)
+        );
+        
+        const querySnapshot = await getDocs(nextQuery);
+        const newTransactions: Transaction[] = [];
+        
+        // Procesar documentos recibidos
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            // Normalizar datos para asegurar la consistencia
+            const normalizedTransaction = { 
+                ...data,
+                id: doc.id,
+                description: data.description || 'Sin descripción',
+                amount: typeof data.amount === 'number' ? data.amount : 0,
+                date: data.date || new Date().toISOString().split('T')[0],
+                type: data.type || 'egreso'
+            } as Transaction;
+            
+            newTransactions.push(normalizedTransaction);
+        });
+        
+        // Si no hay nuevas transacciones, marcar que no hay más datos
+        if (newTransactions.length === 0) {
+            hasMoreData.set(false);
+            if (import.meta.env.DEV) {
+                console.log('[transactions.ts] No hay más transacciones para cargar');
+            }
+            return;
+        }
+        
+        // Asegurar que los nuevos datos estén ordenados correctamente
+        newTransactions.sort((a, b) => {
+            const dateA = new Date(a.date).getTime();
+            const dateB = new Date(b.date).getTime();
+            return dateB - dateA; // Orden descendente (más reciente primero)
+        });
+        
+        // Actualizar para la próxima página
+        if (querySnapshot.docs.length > 0) {
+            lastVisibleDoc = querySnapshot.docs[querySnapshot.docs.length - 1];
+        }
+        
+        // Determinar si hay más datos para cargar
+        hasMoreData.set(querySnapshot.docs.length === PAGE_SIZE);
+        
+        // Añadir las nuevas transacciones al store, manteniendo el orden
+        transactions.update(current => {
+            const combined = [...current, ...newTransactions];
+            
+            // Re-ordenar todo el conjunto para garantizar el orden correcto
+            combined.sort((a, b) => {
+                const dateA = new Date(a.date).getTime();
+                const dateB = new Date(b.date).getTime();
+                return dateB - dateA; // Orden descendente (más reciente primero)
+            });
+            
+            return combined;
+        });
+        
+        // Guardar en caché para futuras cargas (en segundo plano)
+        cacheTransactions(newTransactions).catch(err => {
+            if (import.meta.env.DEV) {
+                console.error('[transactions.ts] Error al cachear nuevas transacciones:', err);
+            }
+        });
+        
+        if (import.meta.env.DEV) {
+            console.log(`[transactions.ts] Cargadas ${newTransactions.length} transacciones adicionales`);
+        }
+    } catch (error) {
+        console.error('[transactions.ts] Error al cargar más transacciones:', error);
+        // Hacer que hasMoreData sea false si hay un error para evitar intentos repetidos
+        hasMoreData.set(false);
+    } finally {
+        isLoadingMore.set(false);
+    }
+}
+
+// Configurar una sincronización en tiempo real solo para las transacciones recientes
+// Esto mejora el rendimiento al no estar escuchando a todos los cambios
+const recentTransactionsQuery = query(
+    transactionsCollectionRef, 
+    orderBy('date', 'desc'), 
+    limit(20) // Solo escuchar cambios en las transacciones más recientes
+);
+
+const unsubscribe = onSnapshot(recentTransactionsQuery, async (querySnapshot) => {
+    const recentTransactions: Transaction[] = [];
+    const recentTransactionsForCache: Transaction[] = [];
+    
+    // Procesar los documentos recibidos
     querySnapshot.forEach((doc) => {
-        // Es importante asegurarse de que los datos del documento coincidan con tu interfaz Transaction
-        // y manejar cualquier transformación necesaria (ej. Timestamps de Firebase a objetos Date de JS si es necesario)
-        // En tu caso, 'date' es un string ISO, lo cual está bien.
-        firebaseTransactions.push({ ...doc.data(), id: doc.id } as Transaction);
+        const data = doc.data();
+        const transaction = { 
+            ...data,
+            id: doc.id,
+            description: data.description || 'Sin descripción',
+            amount: typeof data.amount === 'number' ? data.amount : 0,
+            date: data.date || new Date().toISOString().split('T')[0],
+            type: data.type || 'egreso'
+        } as Transaction;
+        
+        recentTransactions.push(transaction);
+        recentTransactionsForCache.push(transaction);
     });
-    transactions.set(firebaseTransactions); // Actualiza el store de Svelte con los datos de Firebase
-    console.log('[transactions.ts] Transacciones actualizadas desde Firebase:', firebaseTransactions.length);
+    
+    // Asegurarnos que las transacciones recientes están ordenadas correctamente
+    recentTransactions.sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateB - dateA; // Orden descendente (más recientes primero)
+    });
+    
+    // Actualizar caché con las transacciones recientes (en paralelo)
+    if (recentTransactionsForCache.length > 0) {
+        // No esperamos a que termine para no bloquear la UI
+        cacheTransactions(recentTransactionsForCache)
+            .catch(err => console.error('[transactions.ts] Error al actualizar caché en tiempo real:', err));
+    }
+      
+    // Actualizar de manera más inteligente para mantener el orden correcto y evitar duplicados
+    transactions.update(current => {
+        // Identificar los IDs de transacciones recientes para actualizar o insertar
+        const recentIds = new Set(recentTransactions.map(t => t.id));
+        
+        // Filtrar las transacciones actuales para mantener solo las que no están en las recientes
+        const filteredCurrent = current.filter(t => !recentIds.has(t.id));
+        
+        // Combinar transacciones recientes con las existentes
+        const combinedTransactions = [...recentTransactions, ...filteredCurrent];
+        
+        // Asegurar que están correctamente ordenadas por fecha descendente
+        combinedTransactions.sort((a, b) => {
+            const dateA = new Date(a.date).getTime();
+            const dateB = new Date(b.date).getTime();
+            return dateB - dateA; // Orden descendente por fecha
+        });
+        
+        if (import.meta.env.DEV) {
+            console.log('[transactions.ts] Transacciones recientes actualizadas en tiempo real. Total: ' + combinedTransactions.length);
+        }
+        
+        return combinedTransactions;
+    });
 }, (error) => {
-    console.error('[transactions.ts] Error al obtener transacciones desde Firebase con onSnapshot: ', error);
-    // Opcional: si Firebase falla, podrías cargar los datos locales como fallback
-    // if (localInitialTransactions.length > 0) {
-    //     console.log('[transactions.ts] Fallback: Cargando transacciones desde archivo local debido a error de Firebase.');
-    //     transactions.set(localInitialTransactions);
-    // }
+    console.error('[transactions.ts] Error en la escucha en tiempo real de transacciones recientes:', error);
 });
 
 // Opcional: Exportar la función de desuscripción si necesitas detener la escucha en algún momento (ej. al cerrar sesión de un usuario)
@@ -214,26 +380,45 @@ const unsubscribe = onSnapshot(q, (querySnapshot) => {
 
 export async function addTransaction(transactionData: Omit<Transaction, 'id'>): Promise<string | null> {
     try {
-        // Preparamos el objeto a guardar.
-        // Tu 'transactionData.date' ya es un string ISO, lo cual está bien para Firestore.
-        // Opcionalmente, puedes añadir un timestamp del servidor para el momento de la creación.
+        // Preparamos el objeto a guardar
         const dataToSave = {
             ...transactionData,
-            // createdAt: serverTimestamp() // Descomenta si quieres guardar la fecha de creación en el servidor
+            // createdAt: serverTimestamp() // Opcional: añadir timestamp del servidor
         };
 
         const docRef = await addDoc(transactionsCollectionRef, dataToSave);
-        console.log('Transacción guardada en Firebase con ID: ', docRef.id);
-
-        // Con onSnapshot activo, la actualización del store local aquí es opcional
-        // porque onSnapshot detectará el nuevo documento y actualizará el store.
-        // Mantenerla puede dar una sensación de respuesta más inmediata en la UI (actualización optimista).
-        // transactions.update(items => [{ ...transactionData, id: docRef.id } as Transaction, ...items].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        
+        // Crear el objeto completo de transacción con ID
+        const completeTransaction: Transaction = {
+            ...dataToSave as any, // Usando any porque Omit no tiene id, pero el resto sí coincide
+            id: docRef.id
+        };
+        
+        // Actualizar la caché con la nueva transacción
+        await updateCachedTransaction(completeTransaction);
+        
+        // Actualización optimista del store (para mejor UX)
+        transactions.update(items => {
+            // Agregar la nueva transacción al inicio (es la más reciente)
+            const updated = [completeTransaction, ...items];
+            
+            // Re-ordenar por fecha descendente para mantener consistencia
+            updated.sort((a, b) => {
+                const dateA = new Date(a.date).getTime();
+                const dateB = new Date(b.date).getTime();
+                return dateB - dateA;
+            });
+            
+            return updated;
+        });
+        
+        if (import.meta.env.DEV) {
+            console.log('Transacción guardada en Firebase con ID: ', docRef.id);
+        }
+        
         return docRef.id;
     } catch (error) {
         console.error('Error al añadir la transacción a Firebase: ', error);
-        // Podrías querer lanzar el error para que el componente que llama lo maneje
-        // throw error;
         return null;
     }
 }
@@ -242,9 +427,16 @@ export async function removeTransaction(id: string): Promise<void> {
     try {
         const transactionDocRef = doc(db, 'transactions', id);
         await deleteDoc(transactionDocRef);
-        console.log('Transacción eliminada de Firebase con ID: ', id);
-        // onSnapshot se encargará de actualizar el store local.
-        // transactions.update(items => items.filter(item => item.id !== id)); // Opcional para UI optimista
+        
+        // Eliminar de la caché también
+        await deleteCachedTransaction(id);
+        
+        // Actualización optimista para mejor UX
+        transactions.update(items => items.filter(item => item.id !== id));
+        
+        if (import.meta.env.DEV) {
+            console.log('Transacción eliminada de Firebase con ID: ', id);
+        }
     } catch (error) {
         console.error('Error al eliminar la transacción de Firebase: ', error);
         throw error; // Propagar el error para que el componente lo maneje
@@ -297,12 +489,39 @@ export function getExpensesByCategory() {
     return result;
 }
 
+// Función para limpiar todas las transacciones existentes y recargar desde Firestore
+// Útil si la interfaz muestra datos inconsistentes o si se sospecha de un problema con la caché
+export async function resetAllTransactionsAndReload(): Promise<void> {
+    try {
+        // Limpiar el store primero
+        transactions.set([]);
+        
+        // Limpiar otros estados
+        isInitialDataLoaded.set(false);
+        isLoadingMore.set(false);
+        hasMoreData.set(true);
+        lastVisibleDoc = null;
+        
+        // Cargar de nuevo
+        await loadFirstPage();
+        
+        if (import.meta.env.DEV) {
+            console.log('[transactions.ts] Transacciones reiniciadas y recargadas correctamente');
+        }
+    } catch (error) {
+        console.error('[transactions.ts] Error al reiniciar transacciones:', error);
+        throw error;
+    }
+}
+
 // Función para obtener gastos agrupados por cuenta y filtrados por ubicación
 export function getExpensesByCategoryForLocation(location: string) {
     const categories = new Map<string, number>();
 
     try {
-        console.log(`Filtrando egresos por ubicación: "${location}"`); // Changed 'gastos' to 'egresos'
+        if (import.meta.env.DEV) {
+            console.log(`Filtrando egresos por ubicación: "${location}"`);
+        }
 
         if (!location) {
             console.warn('Se llamó a getExpensesByCategoryForLocation sin especificar una ubicación');
@@ -313,12 +532,12 @@ export function getExpensesByCategoryForLocation(location: string) {
             if (!items || !Array.isArray(items)) {
                 console.error('Error: items no es un array o está vacío', items);
                 return;
+            }            const filteredItems = items.filter(item =>
+                item && item.type === 'egreso' && item.location === location);
+
+            if (import.meta.env.DEV) {
+                console.log(`Encontrados ${filteredItems.length} egresos para ubicación "${location}"`);
             }
-
-            const filteredItems = items.filter(item =>
-                item && item.type === 'egreso' && item.location === location); // Changed 'gasto' to 'egreso'
-
-            console.log(`Encontrados ${filteredItems.length} egresos para ubicación "${location}"`); // Changed 'gastos' to 'egresos'
 
             filteredItems.forEach(item => {
                 if (!item) return;
@@ -332,15 +551,15 @@ export function getExpensesByCategoryForLocation(location: string) {
                     categories.set(key, (categories.get(key) || 0) + amount);
                 }
             });
-        })();
-
-        // Convertir el Map a un objeto
+        })();        // Convertir el Map a un objeto
         const result: Record<string, number> = {};
         categories.forEach((value, key) => {
             result[key] = value;
         });
-
-        console.log(result);
+        
+        if (import.meta.env.DEV && Object.keys(result).length > 0) {
+            console.log('[transactions.ts] Resultado de gastos por ubicación:', result);
+        }
 
         return result;
     } catch (error) {

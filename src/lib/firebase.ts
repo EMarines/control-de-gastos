@@ -1,8 +1,5 @@
-// src/lib/firebase.ts
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-// Importa otros servicios de Firebase que necesites, por ejemplo, para autenticación:
-// import { getAuth } from 'firebase/auth';
 
 // Helper para asegurar que las variables de entorno existan
 function getEnvVar(name: string): string {
@@ -13,7 +10,6 @@ function getEnvVar(name: string): string {
   return value;
 }
 
-// Tus credenciales de Firebase desde las variables de entorno
 const firebaseConfig = {
   apiKey: getEnvVar('VITE_FIREBASE_API_KEY'),
   authDomain: getEnvVar('VITE_FIREBASE_AUTH_DOMAIN'),
@@ -21,10 +17,7 @@ const firebaseConfig = {
   storageBucket: getEnvVar('VITE_FIREBASE_STORAGE_BUCKET'),
   messagingSenderId: getEnvVar('VITE_FIREBASE_MESSAGING_SENDER_ID'),
   appId: getEnvVar('VITE_FIREBASE_APP_ID'),
-  // measurementId es opcional, así que podemos manejarlo de forma diferente
-  // o simplemente dejar que sea undefined si no está presente.
-  // Si es estrictamente necesario y debe causar un error si falta, inclúyelo en getEnvVar.
-  // Si es verdaderamente opcional para Firebase, puedes acceder directamente:
+
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID 
 };
 

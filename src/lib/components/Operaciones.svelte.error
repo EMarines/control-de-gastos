@@ -24,8 +24,9 @@
     let operaciones: Operacion[] = [];
     let operacionesFiltradas: Operacion[] = [];
     let datosCargadosInicialmente: boolean = false; // Para saber si ya procesamos los datos del store una vez
-      // Filtros
-    let filtroTipo: string = 'todos'; // 'todos', 'Ingreso', 'Egreso' (con primera letra mayúscula)
+    
+    // Filtros
+    let filtroTipo: string = 'todos'; // 'todos', 'ingreso', 'egreso'
     let filtroCuenta: string = 'todas'; // Cambiado de filtroCategoria a filtroCuenta
     let filtroUbicacion: string = 'todas';
     let filtroBusqueda: string = '';
@@ -147,7 +148,7 @@
             // (principio de corto-circuito)
             
             // Filtro por tipo
-            if (filtroTipo !== 'todos' && op.type.toLowerCase() !== filtroTipo) return false;
+            if (filtroTipo !== 'todos' && op.type !== filtroTipo) return false;
             
             // Filtro por cuenta 
             if (filtroCuenta !== 'todas' && op.cuenta !== filtroCuenta) return false;
@@ -172,10 +173,7 @@
             }
             
             return true;
-        });
-        // Aplicar ordenación
-        operacionesFiltradas = operacionesFiltradas.sort((a: Operacion, b: Operacion): number => {
-        // Aplicar ordenación        operacionesFiltradas = operacionesFiltradas.sort((a: Operacion, b: Operacion): number => {
+        });        // Aplicar ordenación        operacionesFiltradas.sort((a, b) => {
             if (ordenPor === 'fecha') {
                 const fechaA = parseCustomDate(a.date);
                 const fechaB = parseCustomDate(b.date);
@@ -198,11 +196,11 @@
         
         // Calcular totales
         totalIngresos = operacionesFiltradas
-            .filter(op => op.type.toLowerCase() === 'ingreso')
+            .filter(op => op.type === 'ingreso')
             .reduce((sum, op) => sum + op.amount, 0);
             
         totalGastos = operacionesFiltradas
-            .filter(op => op.type.toLowerCase() === 'egreso')
+            .filter(op => op.type === 'egreso')
             .reduce((sum, op) => sum + op.amount, 0);
             
         saldo = totalIngresos - totalGastos;
@@ -215,9 +213,10 @@
             console.error('Datos recibidos no son un array:', transaccionesDelStore);
             return;
         }
-          // Crear una copia para evitar modificar el store directamente
+        
+        // Crear una copia para evitar modificar el store directamente
         // y asegurar que estén ordenadas por fecha descendente (más reciente primero)
-        operaciones = [...transaccionesDelStore].sort((a: Operacion, b: Operacion): number => {
+        operaciones = [...transaccionesDelStore].sort((a, b) => {
             try {
                 const dateA = parseCustomDate(a.date);
                 const dateB = parseCustomDate(b.date);
@@ -280,7 +279,7 @@
   // En Operaciones.svelte
   function handleRowDoubleClick(operation: Operacion): void {
       editingOperation = operation;
-      modalTypeToShow = operation.type.toLowerCase() === 'ingreso' ? 'income' : 'expense';
+      modalTypeToShow = operation.type === 'ingreso' ? 'income' : 'expense';
   }
   
 
@@ -507,8 +506,8 @@
                 <tbody>
                     {#each operacionesFiltradas as op}
                         <tr 
-                            class:ingreso={op.type.toLowerCase() === 'ingreso'} 
-                            class:egreso={op.type.toLowerCase() === 'egreso'} 
+                            class:ingreso={op.type === 'ingreso'} 
+                            class:egreso={op.type === 'egreso'} 
                             on:click={() => handleRowDoubleClick(op)} 
                             style="cursor: pointer;">
                             <td>{formatearFecha(op.date)}</td>
@@ -526,9 +525,10 @@
                             <td>
                                 {op.type === 'ingreso' ? 'Ingreso' : op.cuenta ? op.cuenta.charAt(0).toUpperCase() + op.cuenta.slice(1) : '-'}
                             </td>
-                            <td>{op.location || '-'}</td>                            <td class="monto-celda">
+                            <td>{op.location || '-'}</td>
+                            <td class="monto-celda">
                                 <span class={op.type}>
-                                     {op.type.toLowerCase() === 'ingreso' ? '+' : '-'}{formatCurrency(op.amount)}
+                                     {op.type === 'ingreso' ? '+' : '-'}{formatCurrency(op.amount, '')}
                                 </span>
                                 {#if op.paymentMethod}
                                     <div class="metodo-pago">{op.paymentMethod}</div>
