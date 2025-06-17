@@ -1,6 +1,30 @@
 <script lang="ts">
-    import { transactions, getTotal, getBalance } from '../stores/transactions';
-    import { formatCurrency } from '../util/formatters'; // Importar la función de formato
+    import { transactions } from '../stores/transactions';
+    
+    // Funciones para calcular totales y balance
+    function getTotal(type: 'ingreso' | 'egreso'): number {
+        let total = 0;
+        transactions.subscribe(items => {
+            total = items
+                .filter(item => item.type === type)
+                .reduce((acc, item) => acc + item.amount, 0);
+        })();
+        return total;
+    }
+    
+    function getBalance(): number {
+        return getTotal('ingreso') - getTotal('egreso');
+    }
+    
+    // Función simple de formateo de moneda
+    function formatCurrency(value: number): string {
+        return new Intl.NumberFormat('es-MX', { 
+            style: 'currency', 
+            currency: 'MXN',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(value);
+    }
 </script>
 
 <div class="card">

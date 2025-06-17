@@ -1,7 +1,15 @@
-<script lang="ts">
-    import { onMount } from 'svelte';
+<script lang="ts">    import { onMount } from 'svelte';
     import { transactions, type Transaction } from '../stores/transactions';
-    import { formatCurrency } from '../util/formatters'; // Re-importar para las barras
+    
+    // Función simple de formateo de moneda
+    function formatCurrency(value: number): string {
+        return new Intl.NumberFormat('es-MX', { 
+            style: 'currency', 
+            currency: 'MXN',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(value);
+    }
 
 
     // Props
@@ -68,31 +76,41 @@
 <div class="chart-card">
     <h3>{title}</h3>
     <p class="subtitle">{subtitle}</p>
-    
-    <div class="chart-container">
+      <div class="chart-container">
         {#if barChartData.length > 0}
             <!-- Visualización simplificada con barras horizontales -->
-            <div class="simple-chart">
+            <div class="simple-chart" role="region" aria-label="Gráfico de barras - {title}">
                 {#each barChartData as item}
                     <div class="chart-item">
-                        <div class="label">{item.category}</div>
+                        <div class="label" id="label-{item.category.replace(/\s+/g, '-').toLowerCase()}">{item.category}</div>
                         <div class="bar-container">
-                            <div class="bar" style="width: {Math.min(100, (item.amount / Math.max(...barChartData.map(d => d.amount))) * 100)}%; background-color: {item.color}">
+                            <div class="bar" 
+                                style="width: {Math.min(100, (item.amount / Math.max(...barChartData.map(d => d.amount))) * 100)}%; background-color: {item.color}"
+                                role="img" 
+                                aria-labelledby="label-{item.category.replace(/\s+/g, '-').toLowerCase()}"
+                                aria-valuenow={item.amount}
+                                aria-valuetext="{formatCurrency(item.amount)} para {item.category}"
+                            >
                                 {formatCurrency(item.amount)}
                             </div>
                         </div>
                     </div>
                 {/each}
-            </div>
-        {:else}
-            <div class="no-data">
+            </div>        {:else}
+            <div class="no-data" role="status" aria-live="polite">
                 <p>No hay datos de egresos para <strong>{location || 'esta ubicación'}</strong>.</p> <!-- Changed gastos to egresos -->
                 <p>Verifica que existan transacciones de tipo "egreso" con la ubicación "{location}".</p> <!-- Changed "gasto" to "egreso" -->
-                <button class="debug-button" on:click={() => {
-                    console.log(`Debugging egresos para ${location}:`, $transactions.filter(t => 
-                        t.location === location && t.type === 'egreso'
-                    ));
-                }}>Depurar datos de egresos</button>
+                <button 
+                    class="debug-button" 
+                    on:click={() => {
+                        console.log(`Debugging egresos para ${location}:`, $transactions.filter(t => 
+                            t.location === location && t.type === 'egreso'
+                        ));
+                    }}
+                    aria-label="Depurar datos de egresos para {location}"
+                >
+                    Depurar datos de egresos
+                </button>
             </div>
         {/if}
     </div>

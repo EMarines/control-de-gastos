@@ -1,0 +1,596 @@
+<script lang="ts">
+    import { createEventDispatcher, tick } from 'svelte';
+    import { addTransaction, updateTransaction, removeTransaction, type Transaction } from '../stores/transactions';
+    import { ingresosCasa, ingresosMatchHome, pagadoCon, pagadoPor } from '../data/parameters';
+
+    // Props del componente
+    export let show = false;
+    export let initialData: Transaction | null = null;
+
+    const dispatch = createEventDispatcher();
+
+    // Crear un store local para el estado del formulario
+    // Esto evitará los problemas de estado que causan pérdida de datos
+    let formState = {
+        description: '',
+        amount: null as number | null,
+        formattedAmount: '',
+        dateObject: new Date(),
+        dateInput: '',
+        dateDisplay: '',
+        location: '',
+        incomeSource: '',
+        paymentMethod: '',
+        invoice: '',
+        tags: '',
+        notes: ''
+    };
+
+    // Referencia para acceder al formulario directamente
+    let formElement: HTMLFormElement;
+    
+    // Función para formatear números con separador de miles
+    function formatNumber(value: string): string {
+        if (!value) return '';
+        let clean = value.replace(/[^\d.]/g, '');
+        const decimalPosition = clean.indexOf('.');
+        if (decimalPosition !== -1) {
+            clean = clean.slice(0, decimalPosition + 1) + clean.slice(decimalPosition + 1).replace(/\./g, '');
+        }
+        let [integerPart, decimalPart] = clean.split('.');
+        integerPart = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        return decimalPart !== undefined ? `${integerPart}.${decimalPart}` : integerPart;
+    }
+
+    // Convertir texto formateado a número
+    function parseFormattedNumber(formatted: string): number | null {
+        if (!formatted) return null;
+        const numberStr = formatted.replace(/,/g, '');
+        const number = parseFloat(numberStr);
+        return isNaN(number) ? null : number;
+    }
+
+    // Formatear fecha para mostrar (DD/MMM/YYYY)
+    function formatDateDisplay(date: Date): string {
+        try {
+            const day = date.getDate().toString().padStart(2, '0');
+            const month = date.toLocaleString('es', { month: 'short' });
+            const year = date.getFullYear();
+            return `${day}/${month}/${year}`;
+        } catch (e) {
+            console.error('Error al formatear fecha:', e);
+            return '';
+        }
+    }
+
+    // Formatear fecha para input HTML (YYYY-MM-DD)
+    function formatDateInput(date: Date): string {
+        try {
+            return date.toISOString().split('T')[0];
+        } catch (e) {
+            console.error('Error al formatear fecha para input:', e);
+            return '';
+        }
+    }
+
+    // Convertir texto de fecha a objeto Date
+    function parseInputDate(dateString: string): Date {
+        try {
+            return new Date(dateString);
+        } catch (e) {
+            console.error('Error al parsear fecha:', e);
+            return new Date();
+        }
+    }
+
+    // Función para actualizar la visualización de la fecha
+    function updateDisplayDate() {
+        try {
+            const newDate = parseInputDate(formState.dateInput);
+            // Solo actualizar si la fecha es válida
+            if (!isNaN(newDate.getTime())) {
+                formState.dateObject = newDate;
+                formState.dateDisplay = formatDateDisplay(newDate);
+                console.log('Fecha actualizada correctamente:', formState.dateDisplay);
+            }
+        } catch (err) {
+            console.error('Error al actualizar fecha:', err);
+        }
+    }
+
+    // Opciones para la fuente del ingreso según la ubicación seleccionada
+    $: opcionesIngreso = formState.location === 'Casa' ? ingresosCasa : ingresosMatchHome;
+
+    // Control para la inicialización del formulario
+    let wasShown = false;
+    
+    // Solo inicializar cuando el modal pasa de oculto a visible
+    $: if (show !== wasShown) {
+        wasShown = show;
+        
+        if (show) {
+            // Modal abriéndose - inicializar formulario
+            if (initialData?.id) {
+                // Editar registro existente
+                initializeForEdit();
+            } else {
+                // Nuevo registro
+                resetForm();
+            }
+        }
+    }
+
+    // Función para inicializar el formulario con datos existentes
+    function initializeForEdit() {
+        if (!initialData) return;
+        
+        try {
+            // Crear nuevo objeto para evitar referencias
+            formState = {
+                description: initialData.description || '',
+                amount: initialData.amount,
+                formattedAmount: formatNumber(initialData.amount?.toString() || '0'),
+                dateObject: initialData.date ? parseInputDate(initialData.date) : new Date(),
+                dateInput: '',
+                dateDisplay: '',
+                location: initialData.location || '',
+                incomeSource: initialData.cuenta || '',
+                paymentMethod: initialData.paymentMethod || '',
+                invoice: initialData.invoice || '',
+                tags: initialData.tags || '',
+                notes: initialData.notes || ''
+            };
+            
+            // Procesar las fechas que dependen del dateObject
+            formState.dateInput = formatDateInput(formState.dateObject);
+            formState.dateDisplay = formatDateDisplay(formState.dateObject);
+            
+            console.log('Formulario inicializado para edición');
+        } catch (error) {
+            console.error('Error al inicializar formulario:', error);
+            resetForm(); // En caso de error, usar valores predeterminados
+        }
+    }
+
+    // Resetear el formulario a valores predeterminados
+    function resetForm() {
+        const now = new Date();
+        
+        formState = {
+            description: '',
+            amount: null,
+            formattedAmount: '',
+            dateObject: now,
+            dateInput: formatDateInput(now),
+            dateDisplay: formatDateDisplay(now),
+            location: '',
+            incomeSource: '',
+            paymentMethod: '',
+            invoice: '',
+            tags: '',
+            notes: ''
+        };
+        
+        console.log('Formulario reseteado');
+    }
+
+    // Función para actualizar el monto formateado
+    function handleAmountInput(e: Event) {
+        if (e.target instanceof HTMLInputElement) {
+            formState.formattedAmount = formatNumber(e.target.value);
+            formState.amount = parseFormattedNumber(formState.formattedAmount);
+        }
+    }
+
+    // Función para manejar cambios en el campo de fecha
+    async function handleDateChange(e: Event) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Asegurar que el resto del formulario no se vea afectado
+        await tick();
+        updateDisplayDate();
+    }
+
+    // Manejar el envío del formulario
+    function handleSubmit(e: Event) {
+        e.preventDefault();
+        
+        // Validar campos requeridos
+        if (!formState.description || !formState.amount || formState.amount <= 0 || !formState.dateInput) {
+            alert("Por favor, completa todos los campos obligatorios (*) y asegúrate de que el monto sea válido.");
+            return;
+        }
+        
+        try {
+            // Crear objeto de transacción
+            const isoDate = formState.dateObject.toISOString();
+            
+            const transactionData = {
+                description: formState.description,
+                amount: formState.amount,
+                date: isoDate,
+                type: 'ingreso' as const,
+                location: formState.location,
+                cuenta: formState.incomeSource,
+                subcuenta: '',
+                paymentMethod: formState.paymentMethod,
+                invoice: formState.invoice,
+                tags: formState.tags,
+                notes: formState.notes,
+                businessPurpose: '',
+            };
+            
+            if (initialData?.id) {
+                // Actualizar transacción existente
+                console.log('Actualizando ingreso existente:', initialData.id);
+                updateTransaction({ ...transactionData, id: initialData.id });
+            } else {
+                // Crear nueva transacción
+                console.log('Creando nuevo ingreso');
+                addTransaction(transactionData);
+            }
+            
+            // Cerrar modal después de guardar
+            closeModal();
+        } catch (error) {
+            console.error('Error al guardar transacción:', error);
+            alert('Ocurrió un error al guardar. Por favor, inténtalo de nuevo.');
+        }
+    }
+
+    // Función para eliminar una transacción
+    function handleDelete() {
+        if (initialData?.id && confirm(`¿Estás seguro de que quieres eliminar el ingreso "${initialData.description}"?`)) {
+            removeTransaction(initialData.id);
+            closeModal();
+        }
+    }
+
+    // Cerrar el modal sin guardar cambios
+    function closeModal() {
+        dispatch('close');
+    }
+</script>
+
+{#if show}
+<div 
+    class="modal-overlay" 
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    on:click|self={closeModal} 
+    on:keydown={(e) => e.key === 'Escape' && closeModal()}>
+    <div class="modal-container" role="document">
+        <div class="modal-header">
+            <h2>{initialData?.id ? 'Editar Ingreso' : 'Registrar Ingreso'}</h2>
+            <button type="button" class="close-btn" on:click={closeModal}>&times;</button>
+        </div>
+        
+        <div class="modal-content">
+            <form bind:this={formElement} on:submit={handleSubmit}>
+                <!-- Primera fila: Ubicación y Fuente de Ingreso -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="inc-location">Ubicación</label>
+                        <select 
+                            id="inc-location" 
+                            bind:value={formState.location} 
+                            required
+                        >
+                            <option value="">Seleccionar...</option>
+                            <option value="Casa">Casa</option>
+                            <option value="Match Home">Match Home</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="inc-source">Fuente del Ingreso*</label>
+                        <select 
+                            id="inc-source" 
+                            bind:value={formState.incomeSource} 
+                            required
+                        >
+                            <option value="">Seleccionar fuente...</option>
+                            {#each opcionesIngreso as opcion}
+                                <option value={opcion}>{opcion}</option>
+                            {/each}
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Segunda fila: Fecha y Método de Pago -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="inc-date">Fecha*</label>
+                        <div class="date-input-container">
+                            <input 
+                                type="date" 
+                                id="inc-date" 
+                                bind:value={formState.dateInput}
+                                on:change={handleDateChange}
+                                required 
+                            />
+                            <div class="date-display">{formState.dateDisplay}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="inc-payment">Recibido en</label>
+                        <select 
+                            id="inc-payment" 
+                            bind:value={formState.paymentMethod}
+                        >
+                            <option value="">Seleccionar método...</option>
+                            {#each pagadoCon as metodo}
+                                <option value={metodo}>{metodo}</option>
+                            {/each}
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Tercera fila: Descripción -->
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label for="inc-description">Descripción*</label>
+                        <input 
+                            type="text" 
+                            id="inc-description" 
+                            bind:value={formState.description}
+                            placeholder="Ej: Salario, Venta de producto, etc." 
+                            required 
+                        />
+                    </div>
+                </div>
+                
+                <!-- Cuarta fila: Monto y Referencia/Factura -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="inc-amount">Monto ($)*</label>
+                        <input 
+                            type="text" 
+                            id="inc-amount" 
+                            value={formState.formattedAmount}
+                            on:input={handleAmountInput}
+                            inputmode="decimal" 
+                            placeholder="0.00" 
+                            required 
+                        />
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="inc-invoice">Referencia/Factura</label>
+                        <input 
+                            type="text" 
+                            id="inc-invoice" 
+                            bind:value={formState.invoice}
+                            placeholder="Número de factura o referencia" 
+                        />
+                    </div>
+                </div>
+                
+                <!-- Quinta fila: Etiquetas -->
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label for="inc-tags">Etiquetas</label>
+                        <input 
+                            type="text" 
+                            id="inc-tags" 
+                            bind:value={formState.tags}
+                            placeholder="Separadas por comas" 
+                        />
+                    </div>
+                </div>
+                
+                <!-- Sexta fila: Notas adicionales -->
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label for="inc-notes">Notas adicionales</label>
+                        <textarea 
+                            id="inc-notes" 
+                            bind:value={formState.notes}
+                            placeholder="Añade notas o detalles adicionales"
+                        ></textarea>
+                    </div>
+                </div>
+                
+                <!-- Botones de acción -->
+                <div class="modal-actions">
+                    <button type="button" class="modal-btn btn-cancel" on:click={closeModal}>
+                        Cancelar
+                    </button>
+                    
+                    {#if initialData?.id}
+                        <button type="button" class="modal-btn btn-delete" on:click={handleDelete}>
+                            Borrar
+                        </button>
+                    {/if}
+                    
+                    <button type="submit" class="modal-btn btn-save">
+                        {initialData?.id ? 'Guardar Cambios' : 'Guardar Ingreso'}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{/if}
+
+<style>
+    /* Estilos generales del modal */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+    
+    .modal-container {
+        background-color: white;
+        width: 90%;
+        max-width: 700px;
+        max-height: 90vh;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        overflow-y: auto;
+    }
+    
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border-bottom: 1px solid #eee;
+        background-color: var(--primary-color, #4CAF50);
+        color: white;
+        border-radius: 8px 8px 0 0;
+    }
+    
+    .modal-header h2 {
+        margin: 0;
+        font-size: 1.5rem;
+    }
+    
+    .close-btn {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        color: white;
+        cursor: pointer;
+        padding: 0;
+    }
+    
+    .modal-content {
+        padding: 1.5rem;
+    }
+    
+    /* Estilos del formulario */
+    .form-row {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .form-group {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .full-width {
+        flex-basis: 100%;
+    }
+    
+    label {
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+        font-size: 0.9rem;
+        color: #555;
+    }
+    
+    input, select, textarea {
+        padding: 0.5rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 1rem;
+    }
+    
+    textarea {
+        min-height: 80px;
+        resize: vertical;
+    }
+    
+    /* Estilos específicos para el input de fecha */
+    .date-input-container {
+        position: relative;
+    }
+    
+    .date-display {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 0.5rem;
+        pointer-events: none;
+        background-color: transparent;
+        z-index: 1;
+    }
+    
+    input[type="date"] {
+        color: transparent;
+        position: relative;
+        z-index: 2;
+    }
+    
+    input[type="date"]::-webkit-calendar-picker-indicator {
+        position: absolute;
+        right: 0.5rem;
+        top: 0.5rem;
+        z-index: 3;
+    }
+    
+    /* Botones de acción */
+    .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid #eee;
+    }
+    
+    .modal-btn {
+        padding: 0.5rem 1rem;
+        border: none;
+        border-radius: 4px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    
+    .btn-cancel {
+        background-color: #f1f1f1;
+        color: #555;
+    }
+    
+    .btn-delete {
+        background-color: #f44336;
+        color: white;
+    }
+    
+    .btn-save {
+        background-color: var(--primary-color, #4CAF50);
+        color: white;
+    }
+    
+    .btn-cancel:hover {
+        background-color: #e0e0e0;
+    }
+    
+    .btn-delete:hover {
+        background-color: #d32f2f;
+    }
+    
+    .btn-save:hover {
+        background-color: var(--primary-dark-color, #388E3C);
+    }
+    
+    /* Estilos responsivos */
+    @media (max-width: 600px) {
+        .form-row {
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        
+        .modal-container {
+            width: 95%;
+        }
+    }
+</style>

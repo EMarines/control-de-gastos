@@ -29,7 +29,7 @@
                 amount,
                 date: new Date(date).toISOString(),
                 type,
-                category: type === 'egreso' ? category : undefined, // Solo añadir categoría si es egreso
+                category: type.toLowerCase() === 'egreso' ? category : undefined, // Solo añadir categoría si es egreso
             });
             
             // Reiniciar formulario
@@ -88,7 +88,7 @@
             </select>
         </div>
         
-        {#if type === 'egreso'}
+        {#if type.toLowerCase() === 'egreso'}
             <div class="form-group">
                 <label for="category">Categoría</label>
                 <select id="category" bind:value={category}>
@@ -100,7 +100,7 @@
         {/if}
         
         <button type="submit" class="btn btn-primary">
-            {type === 'ingreso' ? 'Registrar ingreso' : 'Registrar egreso'}
+            {type.toLowerCase() === 'ingreso' ? 'Registrar ingreso' : 'Registrar egreso'}
         </button>
     </form>
 </div>

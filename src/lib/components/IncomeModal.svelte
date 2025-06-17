@@ -1,19 +1,37 @@
 <script lang="ts">
-    import { createEventDispatcher } from 'svelte';
+    import { createEventDispatcher, onMount } from 'svelte';
     import { addTransaction, updateTransaction, removeTransaction, type Transaction } from '../stores/transactions';
-    import { ingresosCasa, ingresosMatchHome, pagadoCon, pagadoPor } from '../data/parameters'; // Asumiendo que tienes parámetros para ingresos
+    import { ingresosCasa, ingresosMatchHome, pagadoCon, pagadoPor } from '../data/parameters';
 
     export let show = false;
-    export let initialData: Transaction | null = null; // Para recibir la operación a editar
+    export let initialData: Transaction | null = null;
 
     const dispatch = createEventDispatcher();
-
-    // Datos del formulario
-    let description: string = '';
-    let amount: number | null = null;
-    let formattedAmount: string = '';
-    let filteredSources: string[] = []; // Para autocompletar fuentes de ingreso
+    
+    // Objeto para almacenar todos los datos del formulario juntos (para evitar resets parciales)
+    let formData = {
+        description: '',
+        amount: null as number | null,
+        formattedAmount: '',
+        dateObject: new Date(),
+        date: '',
+        displayDate: '',
+        location: '',
+        incomeSource: '',
+        paymentMethod: '',
+        invoice: '',
+        tags: '',
+        notes: ''
+    };
+    
+    let filteredSources: string[] = [];
     let showSourceSuggestions: boolean = false;
+    
+    // Inicializar fechas una vez al principio
+    onMount(() => {
+        formData.date = formatDateInput(formData.dateObject);
+        formData.displayDate = formatDateDisplay(formData.dateObject);
+    });
 
     // Funciones de formato de número (igual que en ExpenseModal)
     function formatNumber(value: string): string {
@@ -32,9 +50,7 @@
         const numberStr = formatted.replace(/,/g, '');
         const number = parseFloat(numberStr);
         return isNaN(number) ? null : number;
-    }
-
-    // Funciones de formato de fecha (igual que en ExpenseModal)
+    }    // Funciones de formato de fecha
     function formatDateDisplay(date: Date): string {
         const day = date.getDate().toString().padStart(2, '0');
         const month = date.toLocaleString('es', { month: 'short' });
@@ -49,105 +65,142 @@
     function parseInputDate(dateString: string): Date {
         return new Date(dateString);
     }
-
-    let dateObject: Date = new Date();
-    let date: string = formatDateInput(dateObject);
-    let displayDate: string = formatDateDisplay(dateObject);
-
-    function updateDisplayDate() {
-        dateObject = parseInputDate(date);
-        displayDate = formatDateDisplay(dateObject);
-    }
-
-    // Datos adicionales específicos para ingresos
-    let location: string = ''; // 'Casa' o 'Match Home'
-    let incomeSource: string = ''; // Fuente del ingreso (ej. Nómina, Venta, etc.)
-    let paymentMethod: string = ''; // Cómo se recibió el ingreso
-    let invoice: string = ''; // Referencia o factura
-    let tags: string = '';
-    let notes: string = '';
-
-    // Opciones para la fuente del ingreso según la ubicación
-    $: opcionesFuenteIngreso = location === 'Casa' ? ingresosCasa : ingresosMatchHome;
-
-    // Lógica reactiva para poblar/resetear el formulario
-    $: if (show) {
-        if (initialData) {
-            description = initialData.description || '';
-            amount = initialData.amount;
-            formattedAmount = formatNumber(initialData.amount.toString());
+    
+    // Función para actualizar solo la visualización de la fecha sin afectar otros campos
+    function updateDisplayDate(e: Event) {
+        e?.preventDefault();
+        
+        try {
+            // Solo actualizar elementos relacionados con la fecha
+            const newDateObject = parseInputDate(formData.date);
+            formData.dateObject = newDateObject;
+            formData.displayDate = formatDateDisplay(newDateObject);
+            console.log('Fecha actualizada:', {date: formData.date, displayDate: formData.displayDate});
+        } catch (err) {
+            console.error('Error al actualizar la fecha:', err);
+        }
+    }    // Opciones para la fuente del ingreso según la ubicación
+    $: opcionesFuenteIngreso = formData.location === 'Casa' ? ingresosCasa : ingresosMatchHome;
+    
+    // Variable para evitar inicializaciones repetidas del formulario
+    let lastShowState = false;
+    
+    // Inicializar o resetear el formulario cuando el estado del modal cambia
+    $: {
+        if (show !== lastShowState) {
+            lastShowState = show;
             
-            dateObject = initialData.date ? parseInputDate(initialData.date) : new Date();
-            date = formatDateInput(dateObject);
-            displayDate = formatDateDisplay(dateObject);
-            
-            location = initialData.location || '';
-            incomeSource = initialData.cuenta || ''; // Usamos 'cuenta' para 'incomeSource' si así está en Transaction
-            paymentMethod = initialData.paymentMethod || '';
-            invoice = initialData.invoice || '';
-            tags = initialData.tags || '';
-            notes = initialData.notes || '';
-        } else {
-            resetForm();
+            if (show) {
+                // El modal se está abriendo
+                initializeForm();
+            }
         }
     }
-
-    // Actualizar amount (número) cuando formattedAmount (string) cambia
+    
+    // Función para inicializar el formulario
+    function initializeForm() {
+        try {
+            if (initialData) {
+                // Inicializar con datos existentes para edición
+                formData = {
+                    description: initialData.description || '',
+                    amount: initialData.amount,
+                    formattedAmount: formatNumber(initialData.amount?.toString() || '0'),
+                    dateObject: initialData.date ? parseInputDate(initialData.date) : new Date(),
+                    date: '',
+                    displayDate: '',
+                    location: initialData.location || '',
+                    incomeSource: initialData.cuenta || '',
+                    paymentMethod: initialData.paymentMethod || '',
+                    invoice: initialData.invoice || '',
+                    tags: initialData.tags || '',
+                    notes: initialData.notes || ''
+                };
+                
+                // Establecer las fechas derivadas después de inicializar el objeto
+                formData.date = formatDateInput(formData.dateObject);
+                formData.displayDate = formatDateDisplay(formData.dateObject);
+                
+                console.log('Formulario inicializado para edición:', formData);
+            } else {
+                resetForm();
+            }
+        } catch (error) {
+            console.error('Error al inicializar formulario:', error);
+            resetForm(); // En caso de error, usar valores predeterminados
+        }
+    }    // Actualizar amount (número) cuando formattedAmount (string) cambia
     $: {
-        amount = parseFormattedNumber(formattedAmount);
+        formData.amount = parseFormattedNumber(formData.formattedAmount);
     }
 
+    // Función para resetear el formulario completamente
     function resetForm() {
-        description = '';
-        amount = null;
-        formattedAmount = '';
-        dateObject = new Date();
-        date = formatDateInput(dateObject);
-        displayDate = formatDateDisplay(dateObject);
-        location = '';
-        incomeSource = '';
-        paymentMethod = '';
-        invoice = '';
-        tags = '';
-        notes = '';
+        const now = new Date();
+        
+        formData = {
+            description: '',
+            amount: null,
+            formattedAmount: '',
+            dateObject: now,
+            date: formatDateInput(now),
+            displayDate: formatDateDisplay(now),
+            location: '',
+            incomeSource: '',
+            paymentMethod: '',
+            invoice: '',
+            tags: '',
+            notes: ''
+        };
+        
         showSourceSuggestions = false;
         filteredSources = [];
-    }
-
-    function handleSubmit() {
-        const numericAmount = parseFormattedNumber(formattedAmount);
         
-        if (description && numericAmount !== null && numericAmount > 0 && date) {
-            const transactionData: Omit<Transaction, 'id' | 'type'> & { id?: number; type: 'ingreso' } = {
-                description,
+        console.log('Formulario reseteado');
+    }
+    
+    function handleSubmit() {
+        // Validar el formulario antes de enviar
+        const numericAmount = formData.amount;
+        
+        if (formData.description && numericAmount !== null && numericAmount > 0 && formData.date) {
+            // Preparar la fecha en formato ISO
+            const isoDate = parseInputDate(formData.date).toISOString();
+            console.log('IncomeModal - Fecha para guardado:', { 
+                originalDate: formData.date, 
+                parsedDate: parseInputDate(formData.date),
+                isoDate 
+            });            // Crear objeto para transacción
+            const transactionData = {
+                description: formData.description,
                 amount: numericAmount,
-                date: parseInputDate(date).toISOString(),
-                type: 'ingreso', // Tipo fijo para este modal
-                location,
-                cuenta: incomeSource, // Guardamos 'incomeSource' en el campo 'cuenta' de la transacción
-                // subcuenta: '', // Los ingresos podrían no tener subcuenta, o podrías añadirla
-                paymentMethod,
-                invoice,
-                tags,
-                notes,
-                // businessPurpose: '', // Podría no aplicar a ingresos
+                date: isoDate,
+                type: 'ingreso' as const, // Asegura el tipo correcto
+                location: formData.location,
+                cuenta: formData.incomeSource, // Guardamos 'incomeSource' en el campo 'cuenta' de la transacción
+                subcuenta: '', // Los ingresos podrían no tener subcuenta
+                paymentMethod: formData.paymentMethod,
+                invoice: formData.invoice,
+                tags: formData.tags,
+                notes: formData.notes,
+                businessPurpose: '', // Para mantener consistencia con otros campos
             };
 
             if (initialData && initialData.id) {
                 // Actualizar transacción existente
+                console.log('IncomeModal - Actualizando transacción:', { ...transactionData, id: initialData.id });
                 updateTransaction({ ...transactionData, id: initialData.id });
             } else {
                 // Crear nueva transacción
-                addTransaction(transactionData); // <-- AQUÍ ESTÁ EL PROBLEMA
+                console.log('IncomeModal - Creando nueva transacción:', transactionData);
+                addTransaction(transactionData);
             }
             
             closeModal();
         } else {
             alert("Por favor, completa todos los campos obligatorios (*) y asegúrate de que el monto sea válido.");
         }
-    }
-
-    function handleDelete() {
+    }    function handleDelete() {
         if (initialData && initialData.id) {
             if (confirm(`¿Estás seguro de que quieres eliminar el ingreso "${initialData.description}"?`)) {
                 removeTransaction(initialData.id);
@@ -155,8 +208,10 @@
             }
         }
     }
-
+    
     function closeModal() {
+        // No modificamos los datos del formulario aquí,
+        // esto evita problemas con estados parciales
         dispatch('close');
     }
 
@@ -180,10 +235,8 @@
         } else {
             showSourceSuggestions = false;
         }
-    }
-
-    function selectSource(source: string) {
-        description = source; // o incomeSource = source;
+    }    function selectSource(source: string) {
+        formData.description = source; // Usar formData.description en lugar de description
         showSourceSuggestions = false;
     }
 
@@ -201,13 +254,11 @@
         <div class="modal-header">
             <h2>{initialData?.id ? 'Editar Ingreso' : 'Registrar Ingreso'}</h2>
             <button class="close-btn" on:click={closeModal}>&times;</button>
-        </div>
-        <div class="modal-content">
-            <form on:submit|preventDefault={handleSubmit}>
+        </div>        <div class="modal-content">
+            <form on:submit|preventDefault={handleSubmit} on:input={(e) => e.stopPropagation()}>
                 <div class="form-row">
-                    <div class="form-group">
-                        <label for="inc-location">Ubicación</label>
-                        <select id="inc-location" bind:value={location} required>
+                    <div class="form-group">                        <label for="inc-location">Ubicación</label>
+                        <select id="inc-location" bind:value={formData.location} required>
                             <option value="">Seleccionar...</option>
                             <option value="Casa">Casa</option>
                             <option value="Match Home">Match Home</option>
@@ -215,7 +266,7 @@
                     </div>
                     <div class="form-group">
                         <label for="inc-incomeSource">Fuente del Ingreso*</label>
-                        <select id="inc-incomeSource" bind:value={incomeSource} required>
+                        <select id="inc-incomeSource" bind:value={formData.incomeSource} required>
                             <option value="">Seleccionar fuente...</option>
                             {#each opcionesFuenteIngreso as opcion}
                                 <option value={opcion}>{opcion}</option>
@@ -225,17 +276,25 @@
                 </div>
 
                 <div class="form-row">
-                    <div class="form-group">
-                        <label for="inc-date">Fecha*</label>
+                    <div class="form-group">                        <label for="inc-date">Fecha*</label>
                         <div class="date-input-container">
-                            <input type="date" id="inc-date" bind:value={date} on:change={updateDisplayDate} required />
-                            <div class="date-display">{displayDate}</div>
+                            <input 
+                                type="date" 
+                                id="inc-date" 
+                                bind:value={formData.date}
+                                on:input={(e) => e.stopPropagation()}
+                                on:change={(e) => {
+                                    e.preventDefault();
+                                    updateDisplayDate(e);
+                                }}
+                                required 
+                            />
+                            <div class="date-display">{formData.displayDate}</div>
                         </div>
                     </div>
                     <div class="form-group">
                         <label for="inc-paymentMethod">Recibido en</label>
-                        <select id="inc-paymentMethod" bind:value={paymentMethod}>
-                            <option value="">Seleccionar método...</option>
+                        <select id="inc-paymentMethod" bind:value={formData.paymentMethod}>                            <option value="">Seleccionar método...</option>
                             {#each pagadoCon as opcion} <!-- Reutilizando pagadoCon o podrías tener 'recibidoEn' -->
                                 <option value={opcion}>{opcion}</option>
                             {/each}
@@ -244,9 +303,8 @@
                 </div>
 
                 <div class="form-row">
-                    <div class="form-group full-width">
-                        <label for="inc-description">Descripción*</label>
-                        <input type="text" id="inc-description" bind:value={description} placeholder="Ej: Salario, Venta de producto X" required />
+                    <div class="form-group full-width">                        <label for="inc-description">Descripción*</label>
+                        <input type="text" id="inc-description" bind:value={formData.description} placeholder="Ej: Salario, Venta de producto X" required />
                         <!-- Podrías añadir autocompletado aquí si es relevante -->
                     </div>
                 </div>
@@ -254,25 +312,32 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label for="inc-amount">Monto ($)*</label>
-                        <input type="text" id="inc-amount" bind:value={formattedAmount} on:input={(e) => formattedAmount = formatNumber(e.currentTarget ? e.currentTarget.value : '')} inputmode="decimal" placeholder="0.00" required />
+                        <input 
+                            type="text" 
+                            id="inc-amount" 
+                            bind:value={formData.formattedAmount} 
+                            on:input={(e) => formData.formattedAmount = formatNumber(e.currentTarget ? e.currentTarget.value : '')} 
+                            inputmode="decimal" 
+                            placeholder="0.00" 
+                            required 
+                        />
                     </div>
                     <div class="form-group">
                         <label for="inc-invoice">Referencia/Factura</label>
-                        <input type="text" id="inc-invoice" bind:value={invoice} placeholder="Número de factura o referencia" />
+                        <input type="text" id="inc-invoice" bind:value={formData.invoice} placeholder="Número de factura o referencia" />
                     </div>
                 </div>
 
                 <div class="form-row">
-                    <div class="form-group full-width">
-                        <label for="inc-tags">Etiquetas</label>
-                        <input type="text" id="inc-tags" bind:value={tags} placeholder="Separadas por comas" />
+                    <div class="form-group full-width">                        <label for="inc-tags">Etiquetas</label>
+                        <input type="text" id="inc-tags" bind:value={formData.tags} placeholder="Separadas por comas" />
                     </div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group full-width">
                         <label for="inc-notes">Notas adicionales</label>
-                        <textarea id="inc-notes" bind:value={notes} placeholder="Añade notas o detalles"></textarea>
+                        <textarea id="inc-notes" bind:value={formData.notes} placeholder="Añade notas o detalles"></textarea>
                     </div>
                 </div>
                 

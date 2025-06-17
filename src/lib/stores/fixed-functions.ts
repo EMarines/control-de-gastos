@@ -3,34 +3,66 @@
 import { transactions } from './transactions';
 import type { TransactionType, Transaction } from './transactions';
 
-// Función para obtener gastos agrupados por cuenta y filtrados por ubicación
-export function getExpensesByCategoryForLocation(location: string): Record<string, number> {
+// Función para obtener gastos agrupados por cuenta y filtrados por ubicación y periodo de tiempo
+export function getExpensesByCategoryForLocation(location: string, period: 'month' | 'last30days' = 'month'): Record<string, number> {
     const categories = new Map<string, number>();
-    
-    console.log(`Filtrando gastos por ubicación: "${location}"`);
+      // console.log(`Filtrando gastos por ubicación: "${location}" y periodo: "${period}"`);
     
     if (!location) {
         console.warn('Se llamó a getExpensesByCategoryForLocation sin especificar una ubicación');
         return {};
     }
     
-    try {
-        let items: any[] = [];
+    try {        let items: any[] = [];
         
         // Obtener los datos desde el store
-        transactions.subscribe(data => {
+        const unsubscribe = transactions.subscribe(data => {
             items = data;
-        })();
+        });
+        unsubscribe();
         
         if (!items || !Array.isArray(items)) {
             console.error('Error: No se pudieron obtener items o no es un array', items);
             return {};
         }
         
-        const filteredItems = items.filter(item => 
-            item && item.type === 'egreso' && item.location === location);
+        // Calcular la fecha límite según el periodo seleccionado
+        const now = new Date();
+        let startDate: Date;
+        
+        if (period === 'month') {
+            // Inicio del mes actual
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        } else {
+            // Últimos 30 días
+            startDate = new Date();
+            startDate.setDate(now.getDate() - 30);
+        }
+        
+        // Normalizar la ubicación para aceptar tanto "Match Home" como "MatchHome"
+        const isMatchHome = location === "Match Home" || location === "MatchHome";
+        
+        const filteredItems = items.filter(item => {
+            if (!item || item.type !== 'egreso') return false;
             
-        console.log(`Encontrados ${filteredItems.length} gastos para ubicación "${location}"`);
+            // Verificar la ubicación considerando las dos variantes posibles
+            const itemLocationMatches = isMatchHome 
+                ? (item.location === "Match Home" || item.location === "MatchHome") 
+                : item.location === location;
+                
+            if (!itemLocationMatches) return false;
+            
+            // Filtrar por fecha
+            try {
+                const itemDate = new Date(item.date);
+                return itemDate >= startDate && itemDate <= now;
+            } catch (e) {
+                console.warn(`Fecha inválida en item: ${item.id}, fecha: ${item.date}`);
+                return false;
+            }
+        });
+            
+        console.log(`Encontrados ${filteredItems.length} gastos para ubicación "${location}" en el periodo "${period}"`);
             
         filteredItems.forEach(item => {
             if (!item) return;

@@ -1,18 +1,31 @@
-<script lang="ts">
-    import { onMount } from 'svelte';
+<script lang="ts">    import { onMount } from 'svelte';
     // Importar la función fija desde el nuevo archivo
     import { getExpensesByCategoryForLocation } from '../stores/fixed-functions';
     import { logData, logError, inspectObject } from '../util/debug.js';
+    import { formatCurrency } from '../util/formatters';
       // Props
     export let location: string = ''; // 'Casa' o 'Match Home'
     export let title: string = '';
-      // Si no se proporciona un título, usar uno predeterminado basado en la ubicación
+    export let period: 'month' | 'last30days' = 'month'; // Periodo de tiempo para mostrar datos
+      // Si no se proporciona un título, usar uno predeterminado basado en la ubicación y periodo
     $: if (!title && location) {
-        title = `Egresos - ${location}`;
+        const periodText = period === 'month' ? 'Mes actual' : 'Últimos 30 días';
+        title = `Egresos - ${location} (${periodText})`;
     }
     
-    // Mensaje para el subtítulo
-    const subtitle = "Distribución por cuenta";
+    // Mensaje para el subtítulo que cambia según el periodo seleccionado
+    $: subtitle = period === 'month' 
+        ? `Distribución por cuenta - ${getCurrentMonthName()}`
+        : "Distribución por cuenta - Últimos 30 días";
+    
+    // Función para obtener el nombre del mes actual
+    function getCurrentMonthName(): string {
+        const monthNames = [
+            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+        ];
+        return monthNames[new Date().getMonth()];
+    }
     
     let mounted = false;
     const size = 180; // Tamaño ligeramente más pequeño que el gráfico principal
@@ -65,17 +78,16 @@
             "Z"
         ].join(" ");
     }
-      
-    function calculatePercentages() {
+        function calculatePercentages() {
         try {
             if (!location) {
                 console.warn('LocationPieChart: No location specified');
                 return []; // Si no hay ubicación, devolver array vacío
             }
             
-            console.log(`LocationPieChart: Calculando porcentajes para "${location}"`);
-            const expenses = getExpensesByCategoryForLocation(location);
-            console.log(`LocationPieChart: Gastos obtenidos para "${location}":`, expenses);
+            console.log(`LocationPieChart: Calculando porcentajes para "${location}" en periodo "${period}"`);
+            const expenses = getExpensesByCategoryForLocation(location, period);
+            console.log(`LocationPieChart: Gastos obtenidos para "${location}" en periodo "${period}":`, expenses);
             
             // Verificar si expenses es un objeto válido
             if (!expenses || typeof expenses !== 'object') {
@@ -134,36 +146,46 @@
     <h3>{title}</h3>
     <p class="subtitle">{subtitle}</p>
     
+    <!-- Selector de periodo -->
+    <div class="period-selector">
+        <label>
+            <input type="radio" name="period-{location}" value="month" bind:group={period}>
+            Mes actual
+        </label>
+        <label>
+            <input type="radio" name="period-{location}" value="last30days" bind:group={period}>
+            Últimos 30 días
+        </label>
+    </div>
+    
     <div class="pie-chart-container">
         {#if mounted}
             {@const percentages = calculatePercentages()}
             
             {#if percentages.length > 0}
                 <svg width={size} height={size} viewBox="0 0 {size} {size}" class="pie-chart">
-                    {#each percentages as item}
-                        <path 
+                    {#each percentages as item}                        <path 
                             d={item.pathD} 
                             fill={item.color}
                             stroke="#fff" 
                             stroke-width="1">
-                            <title>{item.category}: {item.amount.toFixed(2)}€ ({item.percent}%)</title>
+                            <title>{item.category}: {formatCurrency(item.amount)} ({item.percent}%)</title>
                         </path>
                     {/each}
                 </svg>
                 
-                <div class="chart-legend">
-                    {#each percentages as item}
+                <div class="chart-legend">                    {#each percentages as item}
                         <div class="legend-item">
                             <div class="color-box" style="background-color: {item.color};"></div>
-                            <span>{item.category}: {item.percent}%</span>
+                            <span title="{formatCurrency(item.amount)}">{item.category}: {item.percent}%</span>
                         </div>
                     {/each}
                 </div>            {:else}                <div class="no-data">
-                    <p>No hay datos de egresos para <strong>{location || 'esta ubicación'}</strong>.</p>
-                    <p>Verifica que existan transacciones de tipo "egreso" con la ubicación "{location}".</p>
+                    <p>No hay datos de egresos para <strong>{location || 'esta ubicación'}</strong> en el periodo seleccionado.</p>
+                    <p>Verifica que existan transacciones de tipo "egreso" con la ubicación "{location}" en {period === 'month' ? 'el mes actual' : 'los últimos 30 días'}.</p>
                     <button class="debug-button" on:click={() => {
-                        inspectObject(getExpensesByCategoryForLocation(location), 2);
-                        logData('LocationPieChart', 'Debug para ubicación', location);
+                        inspectObject(getExpensesByCategoryForLocation(location, period), 2);
+                        logData('LocationPieChart', `Debug para ubicación: ${location}, periodo: ${period}`);
                     }}>Depurar datos</button>
                 </div>
             {/if}
@@ -198,6 +220,24 @@
         font-size: 0.9em;
     }
     
+    .period-selector {
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+        margin-bottom: 1rem;
+        font-size: 0.85rem;
+    }
+    
+    .period-selector label {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+    }
+    
+    .period-selector input {
+        margin-right: 0.3rem;
+    }
+
     .legend-item {
         display: flex;
         align-items: center;

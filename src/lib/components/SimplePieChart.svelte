@@ -56,7 +56,7 @@
       
     function calculatePercentages() {
         const expenses = getExpensesByCategory();
-        const total = Object.values(expenses).reduce((sum, amount) => sum + amount, 0);
+        const total = Object.values(expenses).reduce<number>((sum, amount) => sum + (typeof amount === 'number' ? amount : 0), 0);
         
         // Si no hay gastos, mostrar un mensaje
         if (total === 0) {
@@ -66,16 +66,16 @@
         let startAngle = 0;
         
         return Object.entries(expenses).map(([category, amount], index) => {
-            const percent = total > 0 ? (amount / total * 100) : 0;
+            const amountValue = amount as number;
+            const percent = total > 0 ? (amountValue / total * 100) : 0;
             const sweepAngle = percent * 3.6; // 3.6 = 360/100 (convierte porcentaje a grados)
             const endAngle = startAngle + sweepAngle;
             
             // Crear el path SVG para este segmento
             const pathD = describeArc(centerX, centerY, radius, startAngle, endAngle);
-            
             const item = {
                 category, // Usamos directamente el nombre de la categoría (cuenta)
-                amount,
+                amount: amountValue,
                 percent: Math.round(percent * 10) / 10, // Redondear a 1 decimal
                 color: backgroundColors[index % backgroundColors.length], // Asignar colores cíclicamente
                 pathD
@@ -83,7 +83,7 @@
             
             startAngle = endAngle; // El siguiente segmento comienza donde termina este
             return item;
-        }).filter(item => item.amount > 0);
+        }).filter(item => (item.amount as number) > 0);
     }
 </script>
 
@@ -93,37 +93,36 @@
     <div class="pie-chart-container">
         {#if mounted}
             {@const percentages = calculatePercentages()}
-            
-            {#if percentages.length > 0}
-                <svg width={size} height={size} viewBox="0 0 {size} {size}" class="pie-chart">
+              {#if percentages.length > 0}
+                <svg width={size} height={size} viewBox="0 0 {size} {size}" class="pie-chart" role="img" aria-labelledby="pieChartTitle pieChartDesc">
+                    <title id="pieChartTitle">Distribución de Egresos</title>
+                    <desc id="pieChartDesc">Gráfico circular que muestra el porcentaje de gastos por categoría</desc>
                     {#each percentages as item}
                         <path 
                             d={item.pathD} 
                             fill={item.color}
                             stroke="#fff" 
                             stroke-width="1"
+                            aria-label="{item.category}: {item.amount.toFixed(2)}€ ({item.percent}%)"
                         >
                             <title>{item.category}: {item.amount.toFixed(2)}€ ({item.percent}%)</title>
                         </path>
                     {/each}
                 </svg>
-                
-                <div class="chart-legend">
+                  <div class="chart-legend" role="list" aria-label="Leyenda del gráfico">
                     {#each percentages as item}
-                        <div class="legend-item">
-                            <div class="color-box" style="background-color: {item.color};"></div>
-                            <span>{item.category}: {item.percent}%</span>
+                        <div class="legend-item" role="listitem">
+                            <div class="color-box" style="background-color: {item.color};" aria-hidden="true"></div>
+                            <span>{item.category}: {item.percent}% ({item.amount.toFixed(2)}€)</span>
                         </div>
                     {/each}
-                </div>
-            {:else}
-                <div class="no-data">
+                </div>            {:else}
+                <div class="no-data" role="status" aria-live="polite">
                     <p>No hay datos de egresos con cuentas para mostrar.</p>
                     <p>Registra egresos con cuentas para ver la distribución.</p>
                 </div>
-            {/if}
-        {:else}
-            <p>Cargando gráfico...</p>
+            {/if}        {:else}
+            <p role="status" aria-live="polite">Cargando gráfico...</p>
         {/if}
     </div>
 </div>

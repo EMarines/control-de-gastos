@@ -1,10 +1,10 @@
 <script lang="ts">
     import FinancialSummary from '../lib/components/FinancialSummary.svelte';
-    import LocationPieChartSimple from '../lib/components/LocationPieChartSimple.svelte';
+    import LocationPieCharts from '../lib/components/LocationPieCharts.svelte';
     import TransactionHistory from '../lib/components/TransactionHistory.svelte';
     import TransactionForm from '../lib/components/TransactionForm.svelte';
-    import ExpenseModal from '../lib/components/ExpenseModal.svelte';
-    import IncomeModal from '../lib/components/IncomeModal.svelte';
+    import SimpleExpenseModal from '../lib/components/SimpleExpenseModal.svelte';
+    import SimpleIncomeModal from '../lib/components/SimpleIncomeModal.svelte';
     import Operaciones from '../lib/components/Operaciones.svelte';
     import DataDebugger from '../lib/components/DataDebugger.svelte';
     import { fly } from 'svelte/transition';
@@ -47,51 +47,48 @@
 <main>
     <header>
         <div class="container">
-            <h1>Control de Egresos Personal</h1>            <div class="action-buttons">
+            <h1>Control de Egresos Personal</h1>
+            <div class="action-buttons">
                 <button class="btn btn-danger" on:click={toggleExpenseForm}>
-                    + Registrar Egreso
+                    <i class="fas fa-minus-circle"></i> + Nuevo Egreso
                 </button>
-                <button class="btn btn-secondary" on:click={toggleIncomeForm}>
-                    + Registrar Ingreso
+                <button class="btn btn-success" on:click={toggleIncomeForm}>
+                    <i class="fas fa-plus-circle"></i> + Nuevo Ingreso
                 </button>
+                <!-- <a href="/simple-view" class="btn btn-info">
+                    <i class="fas fa-chart-pie"></i> Ver datos locales
+                </a> -->
             </div>
         </div>
-    </header>
-
-       <div class="container">        <!-- Modal para registrar gastos -->
-        <ExpenseModal show={showExpenseModal} on:close={handleCloseExpenseModal} />
-        
-        <!-- Modal para registrar ingresos -->
-        <IncomeModal show={showIncomeModal} on:close={handleCloseIncomeModal} />
-        
-        {#if showIncomeForm}
-            <div transition:fly={{ y: -20, duration: 300 }}>
-                <TransactionForm initialType="ingreso" />
-            </div>
-        {/if}
-
-        <div class="dashboard-layout">
-            <div class="chart-section">                <!-- Gráficos por ubicación -->
-                <h2 class="chart-title">Distribución de Egresos por Ubicación y Cuenta</h2>
-                <div class="location-charts">
-                    <LocationPieChartSimple location="Casa" title="Egresos - Casa" />
-                    <LocationPieChartSimple location="Match Home" title="Egresos - Match Home" />
+    </header> 
+        <div class="container">        <!-- Modal para registrar gastos -->
+            <SimpleExpenseModal show={showExpenseModal} on:close={handleCloseExpenseModal} />
+            <!-- Modal para registrar ingresos -->
+            <SimpleIncomeModal show={showIncomeModal} on:close={handleCloseIncomeModal} />
+            
+            {#if showIncomeForm}
+                <div transition:fly={{ y: -20, duration: 300 }}>
+                    <TransactionForm initialType="ingreso" />
                 </div>
-            </div>
-            <div class="history-section">
-                <TransactionHistory />
-            </div>
+            {/if}            <div class="dashboard-layout">
+                <div class="chart-section">
+                    <!-- Gráficos por ubicación con controles compartidos -->
+                    <LocationPieCharts />
+                </div>
+                <div class="history-section">
+                    <TransactionHistory />
+                </div>
         </div>
-        <FinancialSummary />
+            <FinancialSummary />
         <!-- Sección para mostrar las operaciones importadas de Excel -->
         <div class="operaciones-section">
             <Operaciones />
         </div>
         
         <!-- Herramienta de depuración de datos -->
-        <DataDebugger />
-    </div>
-</main>
+            <DataDebugger />
+        </div>
+    </main>
 
 <style>
     header {
@@ -123,25 +120,7 @@
         grid-template-columns: 1fr;
         gap: 2rem;
         margin-top: 2rem;
-    }
-      .chart-title {
-        text-align: center;
-        margin-bottom: 1rem;
-        color: var(--dark-color);
-        font-size: 1.5rem;
-    }
-    
-    .location-charts {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1rem;
-    }
-    
-    @media (max-width: 767px) {
-        .location-charts {
-            grid-template-columns: 1fr;
-        }
-    }
+    }      /* Estilos para el layout general de los gráficos */
     
     @media (min-width: 768px) {
         .dashboard-layout {

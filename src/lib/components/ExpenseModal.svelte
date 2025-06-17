@@ -1,6 +1,5 @@
 <script lang="ts">
-    import { createEventDispatcher } from 'svelte';
-    import { addTransaction, updateTransaction, removeTransaction, transactions, type Transaction } from '../stores/transactions'; // Importaciones actualizadas
+    import { createEventDispatcher } from 'svelte';    import { type Transaction, addTransaction, updateTransaction, removeTransaction, transactions } from '../stores/transactions';
     import { cuentaCasa, cuentaMatchHome, gastosCasa, gastosMatchHome, servicios, transporte, escuela, salud, pagadoCon, pagadoPor } from '../data/parameters';
     
     export let show = false;
@@ -50,34 +49,59 @@
         const numberStr = formatted.replace(/,/g, '');
         const number = parseFloat(numberStr);
         return isNaN(number) ? null : number;
-    }
-      // Formatear fecha para mostrar como dd/mmm/yyyy
+    }      // Formatear fecha para mostrar como dd/mmm/yyyy
     function formatDateDisplay(date: Date): string {
-        const day = date.getDate().toString().padStart(2, '0');
-        const month = date.toLocaleString('es', { month: 'short' });
-        const year = date.getFullYear();
+        if (!date) return '';
+        // Ajustar para evitar problemas de zona horaria
+        const localDate = new Date(date);
+        localDate.setMinutes(localDate.getMinutes() + localDate.getTimezoneOffset());
+        const day = String(localDate.getDate()).padStart(2, '0');
+        const month = localDate.toLocaleString('es', { month: 'short' });
+        const year = localDate.getFullYear();
         return `${day}/${month}/${year}`;
     }
     
     // Formatear fecha para input type="date" (YYYY-MM-DD)
     function formatDateInput(date: Date): string {
-        return date.toISOString().split('T')[0];
+        if (!date) return '';
+        // Ajustar para evitar problemas de zona horaria
+        const localDate = new Date(date);
+        localDate.setMinutes(localDate.getMinutes() + localDate.getTimezoneOffset());
+        const year = localDate.getFullYear();
+        const month = String(localDate.getMonth() + 1).padStart(2, '0');
+        const day = String(localDate.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
     
     // Convertir de formato input date a Date object
     function parseInputDate(dateString: string): Date {
-        return new Date(dateString);
-    }
-
-    let dateObject: Date = new Date(); // Objeto Date actual
+        try {
+            return new Date(dateString);
+        } catch (err) {
+            console.error('Error al analizar la fecha:', err);
+            return new Date();
+        }
+    }    // Crear una fecha actual con mediodía para evitar problemas de zona horaria
+    let now = new Date();
+    let dateObject: Date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
     let date: string = formatDateInput(dateObject); // Formato YYYY-MM-DD para input type="date"
     let displayDate: string = formatDateDisplay(dateObject); // Formato dd/mmm/yyyy para mostrar
     
-    function updateDisplayDate() {
-        // Actualizar la fecha mostrada cuando cambie la fecha seleccionada en el input
-        dateObject = parseInputDate(date);
-        displayDate = formatDateDisplay(dateObject);
-    }    // Datos adicionales
+    // Flag para rastrear si el formulario ha sido inicializado
+    let isInitialized = false;
+      function updateDisplayDate(e?: Event) {
+        e && e.preventDefault();
+        
+        try {
+            // Crear la fecha sin considerar la zona horaria
+            dateObject = parseInputDate(date);
+            displayDate = formatDateDisplay(dateObject);
+        } catch (err) {
+            console.error('Error al actualizar la fecha:', err);
+        }
+    }
+    
+    // Datos adicionales
     let location: string = ''; // Valor vacío para Opciones
     let cuenta: string = ''; // Valor vacío para Cuenta
     let subcuenta: string = ''; // Valor vacío para Subcuenta específica
@@ -129,16 +153,34 @@
                 subcuenta = '';
             }
         }
-    }
-
-    // Lógica reactiva para poblar/resetear el formulario
-    $: if (show) {
+    }    // Lógica reactiva para poblar/resetear el formulario con manejo mejorado de inicialización
+    $: if (show && !isInitialized) {
         if (initialData) {
             description = initialData.description || '';
             amount = initialData.amount;
             formattedAmount = formatNumber(initialData.amount.toString()); // Formatear el monto inicial
             
-            dateObject = initialData.date ? parseInputDate(initialData.date) : new Date();
+            try {
+                // Asegurarse de que la fecha se procese correctamente
+                if (initialData.date) {
+                    // Crear fecha sin problemas de zona horaria
+                    const tempDate = new Date(initialData.date);
+                    // Ajustar para la zona horaria local
+                    const adjustedDate = new Date(
+                        tempDate.getFullYear(),
+                        tempDate.getMonth(),
+                        tempDate.getDate(),
+                        12, 0, 0 // Mediodía para evitar problemas
+                    );
+                    dateObject = adjustedDate;
+                } else {
+                    dateObject = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+                }
+            } catch (err) {
+                console.error('Error al inicializar fecha:', err);
+                dateObject = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+            }
+            
             date = formatDateInput(dateObject);
             displayDate = formatDateDisplay(dateObject);
             
@@ -153,10 +195,13 @@
         } else {
             resetForm();
         }
-    } else {
-        // Si el modal no se muestra, también es buena idea resetear por si acaso
-        // o si se quiere que mantenga el estado la próxima vez que se abra sin initialData.
-        // Por ahora, lo dejamos así, el reset principal ocurre cuando show es true y no hay initialData.
+        
+        isInitialized = true;
+    }
+    
+    // Resetear la bandera cuando se cierra el modal
+    $: if (!show) {
+        isInitialized = false;
     }
 
     // Actualizar amount (número) cuando formattedAmount (string) cambia
@@ -200,15 +245,17 @@
     function closeModal() {
         dispatch('close');
         // No es estrictamente necesario resetear aquí si el bloque $: lo maneja
-    }
-
-    function resetForm() {
+    }    function resetForm() {
         description = '';
         amount = null;
         formattedAmount = '';
-        dateObject = new Date();
+        
+        // Crear una fecha actual con mediodía para evitar problemas de zona horaria
+        const now = new Date();
+        dateObject = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
         date = formatDateInput(dateObject);
         displayDate = formatDateDisplay(dateObject);
+        
         location = '';
         cuenta = '';
         subcuenta = '';
@@ -220,19 +267,46 @@
         showProviderSuggestions = false;
         filteredProviders = [];
     }
-
-    function handleSubmit() {
+      function handleSubmit() {
         // Convertir el valor formateado a número para validación
         const numericAmount = parseFormattedNumber(formattedAmount);
         
         if (description && numericAmount !== null && numericAmount > 0 && date) {
+            // Crear fecha sin problemas de zona horaria
+            let adjustedDate;
+            try {
+                const dateParts = date.split('-');
+                const year = parseInt(dateParts[0]);
+                const month = parseInt(dateParts[1]) - 1; // Meses en JS son 0-11
+                const day = parseInt(dateParts[2]);
+                
+                // Validar partes de la fecha
+                if (isNaN(year) || isNaN(month) || isNaN(day)) {
+                    throw new Error('Formato de fecha inválido');
+                }
+                
+                adjustedDate = new Date(year, month, day, 12, 0, 0); // Usar mediodía para evitar problemas de zona horaria
+                
+                // Verificar que la fecha sea válida
+                if (isNaN(adjustedDate.getTime())) {
+                    throw new Error('Fecha inválida');
+                }
+            } catch (err) {
+                console.error('Error al procesar la fecha:', err);
+                // Si hay error, usar la fecha actual
+                const now = new Date();
+                adjustedDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+            }
+            
+            const isoDate = adjustedDate.toISOString();
+            
             if (initialData && initialData.id) {
                 // Actualizar transacción existente
                 const transactionData: Transaction = { // Tipo Transaction completo para actualizar
                     id: initialData.id, // Incluir el ID existente
                     description,
                     amount: numericAmount,
-                    date: parseInputDate(date).toISOString(),
+                    date: isoDate,
                     type: 'egreso',
                     location,
                     cuenta,
@@ -243,6 +317,7 @@
                     notes,
                     businessPurpose
                 };
+                console.log('ExpenseModal - Actualizando transacción:', transactionData);
                 updateTransaction({ ...transactionData, id: initialData.id });
             } else {
                 // Crear nueva transacción
@@ -251,7 +326,7 @@
                     // No se incluye 'id' aquí
                     description,
                     amount: numericAmount,
-                    date: parseInputDate(date).toISOString(),
+                    date: isoDate,
                     type: 'egreso',
                     location,
                     cuenta,
@@ -262,6 +337,7 @@
                     notes,
                     businessPurpose
                 };
+                console.log('ExpenseModal - Creando nueva transacción:', transactionData);
                 addTransaction(transactionData); // El store se encarga de generar el ID
             }
             
@@ -338,10 +414,9 @@
                                 <option value={opcion}>{opcion}</option>
                             {/each}
                         </select>
-                    </div>                    <!-- Fecha (date) -->
-                    <div class="form-group">
+                    </div>                    <!-- Fecha (date) -->                    <div class="form-group">
                         <label for="date">Fecha*</label>
-                        <div class="date-input-container">
+                        <div class="date-container">
                             <input 
                                 type="date" 
                                 id="date"
@@ -554,9 +629,14 @@
         gap: 1rem;
         width: 100%;
     }
-    
-    .form-group {
+      .form-group {
         margin-bottom: 0.5rem;
+        position: relative;
+    }
+    
+    .date-container {
+        position: relative;
+        width: 100%;
     }
     
     .full-width {
@@ -579,20 +659,47 @@
         transition: border-color 0.2s, box-shadow 0.2s;
         color: #999999; /* Color gris más tenue para el texto de los inputs */
         font-weight: 400;
-    }
-      /* Estilo personalizado para inputs de tipo date */
+    }    /* Estilo personalizado para inputs de tipo date */
     input[type="date"] {
-        color: #999999;
+        color: transparent;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
         font-weight: 400;
         padding: 0.7rem;
+        padding-right: 30px;
         appearance: none; /* Para más control sobre la apariencia */
+        position: relative;
+        z-index: 1;
+        background-color: white;
+    }
+    
+    .date-display {
+        position: absolute;
+        pointer-events: none;
+        padding: 0.7rem;
+        top: 0;
+        left: 0;
+        width: calc(100% - 40px); /* Dejar espacio para el icono del calendario */
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        z-index: 2;
+        background-color: transparent;
+        color: #999999;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
+        font-weight: 400;
     }
     
     /* Personalizar el ícono de calendario */
     input[type="date"]::-webkit-calendar-picker-indicator {
         opacity: 0.6;
         cursor: pointer;
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        height: 20px;
+        width: 20px;
+        z-index: 3;
     }
     
     /* Ocultar flechas de inputs numéricos */
@@ -648,30 +755,6 @@
     .suggestion-item:hover {
         background-color: #f5f5f5;
     }    /* Estilos para el selector de fecha personalizado */
-    .date-input-container {
-        position: relative;
-        width: 100%;
-    }
-    
-    .date-input-container input[type="date"] {
-        width: 100%;
-        padding: 0.7rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 1rem;
-        cursor: pointer;
-        color: transparent; /* Hacer invisible el texto del input date nativo */
-    }
-    
-    .date-input-container input[type="date"]::-webkit-calendar-picker-indicator {
-        position: absolute;
-        right: 0.7rem;
-        height: 100%;
-        width: 24px;
-        background-position: right;
-        opacity: 0.6;
-        cursor: pointer;
-    }
     
     .date-display {
         position: absolute;

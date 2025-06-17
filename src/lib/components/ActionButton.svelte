@@ -11,11 +11,13 @@
     class={`action-button ${variant} ${loading ? 'loading' : ''}`}
     on:click={action}
     disabled={disabled || loading}
+    aria-busy={loading}
+    aria-label={text}
 >
     {#if loading}
-        <span class="spinner"></span>
+        <span class="spinner" aria-hidden="true"></span>
     {:else if icon}
-        <span class="icon">{icon}</span>
+        <span class="icon" aria-hidden="true">{icon}</span>
     {/if}
     {text}
 </button>
