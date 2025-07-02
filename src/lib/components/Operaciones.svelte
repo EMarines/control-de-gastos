@@ -44,9 +44,10 @@
     let totalGastos: number = 0;
 let saldo: number = 0;
     
-    // Estado para la edición
+    // Estado para la edición y borrado
     let editingOperation: Operacion | null = null;
     let modalTypeToShow: 'income' | 'expense' | null = null;
+    let deletingOperation: Operacion | null = null;
     
     // Función para convertir fecha en formato "21-May-25" a timestamp
     function parseCustomDate(dateStr: string): number {
@@ -599,7 +600,7 @@ let saldo: number = 0;
         modalTypeToShow = null;
         editingOperation = null; // Limpiar la operación en edición al cerrar
     }
-      // Crear una combinación de todos los filtros para optimizar la reactividad
+    // Crear una combinación de todos los filtros para optimizar la reactividad
     $: filtrosCombinados = { 
         tipo: filtroTipo, 
         cuenta: filtroCuenta, 
@@ -610,6 +611,18 @@ let saldo: number = 0;
         orden: ordenPor,
         direccion: ordenDireccion
     };
+
+    // Borrar transacción
+    async function handleDeleteOperation(op: Operacion) {
+        if (confirm('¿Seguro que deseas borrar esta transacción?')) {
+            try {
+                await removeTransaction(op.id);
+                alert('Transacción eliminada');
+            } catch (e) {
+                alert('Error al eliminar: ' + e);
+            }
+        }
+    }
     
     // Usar debounce para la búsqueda por texto para evitar procesamiento excesivo
     let debounceTimer: number | null = null;
@@ -807,10 +820,7 @@ let saldo: number = 0;
             <strong>{formatCurrency(saldo)}</strong>
         </div>    </div>
     
-    <!-- Nota informativa sobre datos limitados -->
-    <div class="nota-datos-limitados">
-        <strong>Nota:</strong> Se están mostrando solo los primeros 50 registros como prueba.
-    </div>
+    <!-- Nota eliminada: ahora scroll infinito real -->
       <!-- Tabla de operaciones con scroll infinito -->
     {#if !$isInitialDataLoaded && operacionesFiltradas.length === 0}
         <div class="cargando">Cargando datos...</div>
@@ -845,7 +855,7 @@ let saldo: number = 0;
                         <tr 
                             class:ingreso={op.type.toLowerCase() === 'ingreso'} 
                             class:egreso={op.type.toLowerCase() === 'egreso'} 
-                            on:click={() => handleRowDoubleClick(op)} 
+                            on:dblclick={() => handleRowDoubleClick(op)} 
                             style="cursor: pointer;">
                             <td>{formatearFecha(op.date)}</td>
                             <td class="descripcion-celda">
@@ -862,13 +872,15 @@ let saldo: number = 0;
                             <td>
                                 {op.type.toLowerCase() === 'ingreso' ? 'Ingreso' : op.cuenta ? op.cuenta.charAt(0).toUpperCase() + op.cuenta.slice(1) : '-'}
                             </td>
-                            <td>{op.location || '-'}</td>                            <td class="monto-celda">
+                            <td>{op.location || '-'}</td>
+                            <td class="monto-celda">
                                 <span class={op.type}>
                                      {op.type.toLowerCase() === 'ingreso' ? '+' : '-'}{formatCurrency(op.amount)}
                                 </span>
                                 {#if op.paymentMethod}
                                     <div class="metodo-pago">{op.paymentMethod}</div>
                                 {/if}
+                                <button class="delete-btn" title="Borrar transacción" on:click|stopPropagation={() => handleDeleteOperation(op)}>🗑️</button>
                             </td>
                         </tr>
                     {/each}
@@ -1072,6 +1084,26 @@ let saldo: number = 0;
     
     .monto-celda {
         font-weight: 500;
+        position: relative;
+    }
+
+    .delete-btn {
+        background: none;
+        border: none;
+        color: #F44336;
+        font-size: 1.2rem;
+        cursor: pointer;
+        margin-left: 0.5rem;
+        transition: color 0.2s;
+        position: absolute;
+        right: 0.5rem;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.7;
+    }
+    .delete-btn:hover {
+        color: #b71c1c;
+        opacity: 1;
     }
     
     .metodo-pago {
