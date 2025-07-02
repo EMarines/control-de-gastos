@@ -584,7 +584,7 @@
             No se encontraron operaciones con los filtros seleccionados.
         </div>
     {:else}
-        <div class="tabla-operaciones">
+        <div class="tabla-operaciones" bind:this={tablaContainer} on:scroll={optimizedHandleScroll}>
             <table>
                 <thead>
                     <tr>
@@ -635,6 +635,14 @@
                     {/each}
                 </tbody>
             </table>
+            {#if $isLoadingMore}
+                <div class="cargando-mas">
+                    <span class="spinner"></span> Cargando más operaciones...
+                </div>
+            {/if}
+            {#if $isInitialDataLoaded && !$hasMoreData}
+                <div class="sin-mas-datos">No hay más operaciones para mostrar.</div>
+            {/if}
         </div>
     {/if}
 </div>

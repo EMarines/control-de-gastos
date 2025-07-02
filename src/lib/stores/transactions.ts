@@ -28,7 +28,8 @@ import {
   addTransactionToFirestore,
   updateTransactionInFirestore,
   deleteTransactionFromFirestore,
-  getAllTransactionsFromFirestore
+  getAllTransactionsFromFirestore,
+  getTransactionsPageFromFirestore
 } from '../services/firebase-crud';
 
 // Definición de tipos
@@ -81,6 +82,7 @@ export async function resetAllTransactionsAndReload(): Promise<void> {
     }
 }
 
+
 // Configuración para la paginación
 const PAGE_SIZE = 50; // Número de transacciones por página
 export const isLoadingMore = writable<boolean>(false);
@@ -89,6 +91,7 @@ export const isInitialDataLoaded = writable<boolean>(false);
 
 // Store principal de transacciones
 export const transactions = writable<Transaction[]>([]);
+let lastVisibleDoc: any = null;
 
 // Función para actualizar una transacción existente
 export async function updateTransaction(transactionData: Transaction): Promise<void> {
@@ -200,30 +203,29 @@ function normalizeTransactionType(type: string): TransactionType {
     return 'egreso';
 }
 
-// Función para cargar la primera página de transacciones
+// Función para cargar la primera página de transacciones (paginada)
 export async function loadFirstPage(): Promise<void> {
   if (get(isLoadingMore)) return;
   isLoadingMore.set(true);
   hasMoreData.set(true);
   isInitialDataLoaded.set(false);
+  lastVisibleDoc = null;
   try {
-    // Cargar desde Firestore
-    const firestoreTransactions = await getAllTransactionsFromFirestore();
-    if (firestoreTransactions && firestoreTransactions.length > 0) {
-      // Guardar en caché para futuras cargas
-      await cacheTransactions(firestoreTransactions);
-      // Configurar el store con los datos de Firestore
-      transactions.set(firestoreTransactions);
+    const { data, lastDoc } = await getTransactionsPageFromFirestore(PAGE_SIZE);
+    transactions.set(data);
+    lastVisibleDoc = lastDoc;
+    if (data.length < PAGE_SIZE) {
       hasMoreData.set(false);
-      if (import.meta.env.DEV) {
-        console.log(`[transactions.ts] Cargados ${firestoreTransactions.length} transacciones desde Firestore`);
-      }
     } else {
-      console.warn('[transactions.ts] No se pudieron cargar datos desde Firestore');
-      transactions.set([]);
+      hasMoreData.set(true);
+    }
+    if (import.meta.env.DEV) {
+      console.log(`[transactions.ts] Cargada primera página: ${data.length} transacciones`);
     }
   } catch (error) {
-    console.error('[transactions.ts] Error al cargar datos desde Firestore:', error);
+    console.error('[transactions.ts] Error al cargar la primera página:', error);
+    transactions.set([]);
+    hasMoreData.set(false);
   } finally {
     isLoadingMore.set(false);
     isInitialDataLoaded.set(true);
@@ -232,12 +234,33 @@ export async function loadFirstPage(): Promise<void> {
 
 // Función para cargar más transacciones (siguiente página)
 export async function loadMoreTransactions(): Promise<void> {
-    hasMoreData.set(false);
-    
-    if (import.meta.env.DEV) {
-        console.log('[transactions.ts] No hay paginación con datos locales - todos los datos ya están cargados');
+  if (get(isLoadingMore) || !get(hasMoreData)) return;
+  isLoadingMore.set(true);
+  try {
+    const { data, lastDoc } = await getTransactionsPageFromFirestore(PAGE_SIZE, lastVisibleDoc);
+    if (data.length === 0) {
+      hasMoreData.set(false);
+      return;
     }
-    return;
+    transactions.update(items => {
+      // Evitar duplicados
+      const ids = new Set(items.map(t => t.id));
+      const nuevos = data.filter(t => !ids.has(t.id));
+      return [...items, ...nuevos];
+    });
+    lastVisibleDoc = lastDoc;
+    if (data.length < PAGE_SIZE) {
+      hasMoreData.set(false);
+    }
+    if (import.meta.env.DEV) {
+      console.log(`[transactions.ts] Cargada página adicional: ${data.length} transacciones`);
+    }
+  } catch (error) {
+    console.error('[transactions.ts] Error al cargar más transacciones:', error);
+    hasMoreData.set(false);
+  } finally {
+    isLoadingMore.set(false);
+  }
 }
 
 // Inicialización
