@@ -1,3 +1,16 @@
+// Agrupa y suma los egresos por cuenta (o categoría si no hay cuenta)
+export function getExpensesByCategory(): Record<string, number> {
+    const all = get(transactions);
+    const result: Record<string, number> = {};
+    for (const t of all) {
+        if (t.type === 'egreso') {
+            // Usar cuenta si existe, si no, usar categoría, si no, 'Sin cuenta'
+            const key = t.cuenta || t.category || 'Sin cuenta';
+            result[key] = (result[key] || 0) + (typeof t.amount === 'number' ? t.amount : 0);
+        }
+    }
+    return result;
+}
 // Nueva versión de transactions.ts sin referencias a Firebase
 import { writable, get } from 'svelte/store';
 

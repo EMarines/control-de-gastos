@@ -21,28 +21,58 @@
     
     type Operacion = Transaction; 
     
-    let operaciones: Operacion[] = [];
-    let operacionesFiltradas: Operacion[] = [];
-    let datosCargadosInicialmente: boolean = false; // Para saber si ya procesamos los datos del store una vez    // Filtros
-    let filtroTipo: string = 'todos'; // 'todos', 'ingreso', 'egreso' (todo en minúsculas como en la base de datos)
-    let filtroCuenta: string = 'todas'; // Cambiado de filtroCategoria a filtroCuenta
+    import { derived } from 'svelte/store';
+    // Usar directamente el store de transacciones y filtrar en un derived store
+    let filtroTipo: string = 'todos';
+    let filtroCuenta: string = 'todas';
     let filtroUbicacion: string = 'todas';
     let filtroBusqueda: string = '';
     let filtroFechaDesde: string = '';
     let filtroFechaHasta: string = '';
+
+    // Derived store para operaciones filtradas
+    const operacionesFiltradasStore = derived(transactions, $transactions => {
+        let arr = [...$transactions];
+        // Filtros
+        if (filtroTipo !== 'todos') arr = arr.filter(op => op.type?.toLowerCase() === filtroTipo);
+        if (filtroCuenta !== 'todas') arr = arr.filter(op => op.cuenta === filtroCuenta);
+        if (filtroUbicacion !== 'todas') arr = arr.filter(op => op.location === filtroUbicacion);
+        if (filtroBusqueda) {
+            const b = filtroBusqueda.toLowerCase();
+            arr = arr.filter(op =>
+                op.description?.toLowerCase().includes(b) ||
+                op.notes?.toLowerCase().includes(b) ||
+                op.invoice?.toLowerCase().includes(b)
+            );
+        }
+        if (filtroFechaDesde) {
+            const desde = new Date(filtroFechaDesde);
+            arr = arr.filter(op => new Date(op.date) >= desde);
+        }
+        if (filtroFechaHasta) {
+            const hasta = new Date(filtroFechaHasta);
+            hasta.setHours(23,59,59,999);
+            arr = arr.filter(op => new Date(op.date) <= hasta);
+        }
+        // Ordenar por fecha descendente
+        arr.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return arr;
+    });
+    $: operacionesFiltradas = $operacionesFiltradasStore;
+    // Eliminado: declaración duplicada de filtros (ya están declarados arriba)
     
     // Ordenación
     let ordenPor: string = 'fecha'; // 'fecha', 'monto', 'descripcion'
     let ordenDireccion: 'asc' | 'desc' = 'desc';
     
     // Cuentas únicas para filtro (anteriormente categorías)
-    let cuentasUnicas: string[] = [];
-    let ubicaciones: string[] = [];
+    $: cuentasUnicas = Array.from(new Set($transactions.map(op => op.cuenta).filter((c): c is string => !!c)));
+    $: ubicaciones = Array.from(new Set($transactions.map(op => op.location).filter((u): u is string => !!u)));
     
     // Totales
-    let totalIngresos: number = 0;
-    let totalGastos: number = 0;
-let saldo: number = 0;
+    $: totalIngresos = operacionesFiltradas.filter((op: Operacion) => op.type === 'ingreso').reduce((sum, op) => sum + op.amount, 0);
+    $: totalGastos = operacionesFiltradas.filter((op: Operacion) => op.type === 'egreso').reduce((sum, op) => sum + op.amount, 0);
+    $: saldo = totalIngresos - totalGastos;
     
     // Estado para la edición y borrado
     let editingOperation: Operacion | null = null;
@@ -324,255 +354,9 @@ let saldo: number = 0;
             return 'Fecha inválida';
         }
     }
-      // Función para filtrar operaciones (optimizada)
-    function filtrarOperaciones(): void {
-        // Preparar las variables de búsqueda fuera del bucle para evitar recrearlas por cada operación
-        const busqueda = filtroBusqueda ? filtroBusqueda.toLowerCase() : '';
-        const fechaDesde = filtroFechaDesde ? new Date(filtroFechaDesde) : null;
-        
-        // Crear fecha hasta con el final del día seleccionado
-        let fechaHasta = null;
-        if (filtroFechaHasta) {
-            fechaHasta = new Date(filtroFechaHasta);
-            fechaHasta.setHours(23, 59, 59, 999); // Fin del día
-        }
-        
-        // console.log(`filtrarOperaciones - Filtrando ${operaciones.length} operaciones con filtros:`, {
-        //     tipo: filtroTipo,
-        //     cuenta: filtroCuenta,
-        //     ubicacion: filtroUbicacion,
-        //     busqueda: busqueda,
-        //     fechaDesde: fechaDesde ? fechaDesde.toISOString() : null,
-        //     fechaHasta: fechaHasta ? fechaHasta.toISOString() : null
-        // });
-        
-        // Aplicar filtros de manera más eficiente
-        operacionesFiltradas = operaciones.filter(op => {
-            // Verificar las propiedades requeridas para asegurarse que existen
-            if (!op || typeof op.type !== 'string') {
-                console.warn('Operación inválida o sin tipo:', op);
-                return false;
-            }
-
-            // Verificar los filtros más rápidos primero para mejorar rendimiento
-            // (principio de corto-circuito)
-            
-            // Filtro por tipo - comparar ignorando mayúsculas/minúsculas
-            if (filtroTipo !== 'todos' && op.type.toLowerCase() !== filtroTipo.toLowerCase()) {
-                return false;
-            }
-            
-            // Filtro por cuenta 
-            if (filtroCuenta !== 'todas' && op.cuenta !== filtroCuenta) {
-                return false;
-            }
-            
-            // Filtro por ubicación
-            if (filtroUbicacion !== 'todas' && op.location !== filtroUbicacion) {
-                return false;
-            }
-            
-            // Filtros más costosos al final
-            
-            // Filtro por fecha desde
-            if (fechaDesde) {
-                const opDate = new Date(op.date);
-                if (isNaN(opDate.getTime())) {
-                    console.warn('Fecha inválida en operación:', op.id, op.date);
-                    return false;
-                }
-                if (opDate < fechaDesde) return false;
-            }
-            
-            // Filtro por fecha hasta
-            if (fechaHasta) {
-                const opDate = new Date(op.date);
-                if (isNaN(opDate.getTime())) {
-                    console.warn('Fecha inválida en operación:', op.id, op.date);
-                    return false;
-                }
-                if (opDate > fechaHasta) return false;
-            }
-            
-            // Filtro por texto de búsqueda (el más costoso)
-            if (busqueda) {
-                const descripcionMatches = op.description?.toLowerCase().includes(busqueda);
-                const notasMatches = op.notes?.toLowerCase().includes(busqueda);
-                const facturaMatches = op.invoice?.toLowerCase().includes(busqueda);
-                if (!descripcionMatches && !notasMatches && !facturaMatches) return false;
-            }
-            
-            return true;
-        });
-
-        // console.log(`filtrarOperaciones - Resultado: ${operacionesFiltradas.length} operaciones después de filtrar`);
-
-        // Aplicar ordenación
-        operacionesFiltradas = operacionesFiltradas.sort((a: Operacion, b: Operacion): number => {
-            if (ordenPor === 'fecha') {
-                const fechaA = parseCustomDate(a.date);
-                const fechaB = parseCustomDate(b.date);
-                
-                // Si alguna fecha es inválida (0), colocarla al final
-                if (fechaA === 0 && fechaB !== 0) return ordenDireccion === 'asc' ? 1 : -1;
-                if (fechaB === 0 && fechaA !== 0) return ordenDireccion === 'asc' ? -1 : 1;
-                if (fechaA === 0 && fechaB === 0) return 0;
-                
-                return ordenDireccion === 'asc' ? fechaA - fechaB : fechaB - fechaA;
-            } else if (ordenPor === 'monto') {
-                return ordenDireccion === 'asc' ? a.amount - b.amount : b.amount - a.amount;
-            } else if (ordenPor === 'descripcion') {
-                return ordenDireccion === 'asc' 
-                    ? a.description.localeCompare(b.description) 
-                    : b.description.localeCompare(a.description);
-            }
-            return 0;
-        });
-        
-        // Calcular totales
-        totalIngresos = operacionesFiltradas
-            .filter(op => op.type.toLowerCase() === 'ingreso')
-            .reduce((sum, op) => sum + op.amount, 0);
-            
-        totalGastos = operacionesFiltradas
-            .filter(op => op.type.toLowerCase() === 'egreso')
-            .reduce((sum, op) => sum + op.amount, 0);
-            
-        saldo = totalIngresos - totalGastos;    }
+    // Función eliminada: la lógica de filtrado está en el derived store
     
-    // Procesar datos del store de transacciones
-    function procesarTransacciones(transaccionesDelStore: Transaction[]): void {
-        // Mostrar datos recibidos para debug
-        console.log('Datos recibidos del store:', transaccionesDelStore);
-        
-        if (transaccionesDelStore && transaccionesDelStore.length > 0) {
-            // console.log('Muestra de tipos de transacciones:', 
-            //     transaccionesDelStore.slice(0, 5).map(t => `${t.id}: ${t.type} (${typeof t.type})`));
-                
-            // Verificar si hay algún problema con los tipos de transacciones
-            const problemasConTipos = transaccionesDelStore
-                .filter(t => !t.type || (t.type.toLowerCase() !== 'ingreso' && t.type.toLowerCase() !== 'egreso'));
-                
-            if (problemasConTipos.length > 0) {
-                // console.error(`Se encontraron ${problemasConTipos.length} transacciones con tipos problematicos:`, 
-                //    problemasConTipos.map(t => `${t.id}: ${t.type}`));
-            }
-        }
-        
-        // Verificar que los datos sean válidos para evitar errores
-        if (!Array.isArray(transaccionesDelStore)) {
-            console.error('Datos recibidos no son un array:', transaccionesDelStore);
-            return;
-        }
-        
-        // Verificar fechas antes de iniciar el procesamiento
-        const problemasConFechas = transaccionesDelStore.filter(t => {
-            try {
-                const dateObj = new Date(t.date);
-                return isNaN(dateObj.getTime());
-            } catch (e) {
-                return true;
-            }
-        });
-        
-        if (problemasConFechas.length > 0) {
-            console.error(`Se encontraron ${problemasConFechas.length} transacciones con fechas inválidas:`, 
-                problemasConFechas.map(t => `${t.id}: ${t.date}`));
-        }
-        
-        // Analizar distribución de fechas para detectar patrones
-        const fechasDistribucion: Record<string, number> = {};
-        const formatosDetectados: Record<string, number> = {
-            'ISO': 0,
-            'dd-MMM-yy': 0,
-            'dd/mm/yyyy': 0,
-            'otro': 0
-        };
-        
-        transaccionesDelStore.forEach(t => {
-            if (!t.date) return;
-            
-            // Contar ocurrencias de patrones de fecha específicos
-            if (t.date.startsWith('9-Sep')) {
-                fechasDistribucion['9-Sep'] = (fechasDistribucion['9-Sep'] || 0) + 1;
-            } else if (t.date.startsWith('9-Oct')) {
-                fechasDistribucion['9-Oct'] = (fechasDistribucion['9-Oct'] || 0) + 1;
-            }
-            
-            // Detectar formato
-            if (t.date.includes('T')) {
-                formatosDetectados['ISO']++;
-            } else if (t.date.includes('-') && /\d+-[A-Za-z]+-\d+/.test(t.date)) {
-                formatosDetectados['dd-MMM-yy']++;
-            } else if (t.date.includes('/')) {
-                formatosDetectados['dd/mm/yyyy']++;
-            } else {
-                formatosDetectados['otro']++;
-            }
-            
-            // Agregar el mes/año para visualizar distribución
-            try {
-                const timestamp = parseCustomDate(t.date);
-                if (timestamp > 0) {
-                    const fecha = new Date(timestamp);
-                    const clave = `${fecha.getFullYear()}-${fecha.getMonth() + 1}`;
-                    fechasDistribucion[clave] = (fechasDistribucion[clave] || 0) + 1;
-                }
-            } catch (e) {}
-        });
-        
-        // Imprimir diagnóstico
-        // console.log('Formatos de fecha detectados:', formatosDetectados);
-        // console.log('Distribución de fechas:', fechasDistribucion);
-        
-        // Crear una copia para evitar modificar el store directamente
-        // y asegurar que estén ordenadas por fecha descendente (más reciente primero)
-        operaciones = [...transaccionesDelStore].sort((a: Operacion, b: Operacion): number => {
-            try {
-                const dateA = parseCustomDate(a.date);
-                const dateB = parseCustomDate(b.date);
-                
-                // Verificar validez de las fechas y hacer debug
-                if (isNaN(dateA) || dateA === 0) {
-                    console.error('Fecha A inválida en ordenamiento inicial:', a.id, a.date, dateA);
-                }
-                if (isNaN(dateB) || dateB === 0) {
-                    console.error('Fecha B inválida en ordenamiento inicial:', b.id, b.date, dateB);
-                }
-                
-                // Mostrar algunos ejemplos de fechas (solo para debugging)
-                if (Math.random() < 0.01) { // Mostrar aproximadamente 1% de las fechas para no sobrecargar la consola
-                    // console.log(`Fecha ordenada: ${a.date} -> ${new Date(dateA).toISOString()}`);
-                }
-                
-                return dateB - dateA; // Orden descendente por fecha
-            } catch (error) {
-                console.error('Error al ordenar fechas:', error, { a: a.date, b: b.date });
-                return 0;
-            }
-        });
-
-        // Extraer cuentas y ubicaciones únicas para los filtros
-        const cuentasSet = new Set<string>();
-        const ubicacionesSet = new Set<string>();
-        
-        operaciones.forEach(op => {
-            if (op.cuenta) cuentasSet.add(op.cuenta);
-            if (op.location) ubicacionesSet.add(op.location);
-        });
-        
-        cuentasUnicas = Array.from(cuentasSet).sort();
-        ubicaciones = Array.from(ubicacionesSet).sort();
-        
-        // console.log('Cuentas detectadas:', cuentasUnicas);
-        // console.log('Ubicaciones detectadas:', ubicaciones);
-        
-        // Aplicar filtros iniciales
-        filtrarOperaciones();
-        
-        // Marcar datos como cargados
-        datosCargadosInicialmente = true;
-    }
+    // Función eliminada: la lógica de procesamiento está en el store y derived store
     
     // Cambiar ordenación
     function cambiarOrden(campo: string): void {
@@ -586,7 +370,7 @@ let saldo: number = 0;
             ordenDireccion = campo === 'fecha' ? 'desc' : 'asc';
         }
         
-        filtrarOperaciones();
+        // filtrado y ordenación ahora es reactivo por el derived store
     }
 
   // En Operaciones.svelte
@@ -624,38 +408,19 @@ let saldo: number = 0;
         }
     }
     
-    // Usar debounce para la búsqueda por texto para evitar procesamiento excesivo
-    let debounceTimer: number | null = null;
-    $: {
-        if (datosCargadosInicialmente) {
-            // Cancelar temporizador anterior si existe
-            if (debounceTimer !== null) {
-                clearTimeout(debounceTimer);
-            }
-            
-            // Si es un cambio en la búsqueda por texto, usar debounce
-            if (filtroBusqueda !== undefined) {
-                debounceTimer = setTimeout(() => {
-                    filtrarOperaciones();
-                    debounceTimer = null;
-                }, 300) as unknown as number;
-            } else {
-                // Para otros filtros, aplicar inmediatamente
-                filtrarOperaciones();
-            }
-        }
-    }
+    // Eliminado: debounce y bloque reactivo innecesario
       // Variables para scroll infinito
-    let tablaContainer: HTMLDivElement;
+    let tablaContainer: HTMLDivElement | undefined;
     let scrollLoadingThreshold = 200; // píxeles desde el fondo para cargar más
     let loadingMoreData = false; // Estado local para evitar múltiples cargas
       // Manejar el evento de scroll para cargar más datos cuando se acerca al final
     function handleScroll() {
+        if (!tablaContainer) return;
         if ($isLoadingMore || !$hasMoreData || loadingMoreData) return;
-        
+
         const { scrollTop, scrollHeight, clientHeight } = tablaContainer;
         const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-        
+
         if (distanceFromBottom < scrollLoadingThreshold) {
             loadingMoreData = true;
             loadMoreTransactions().then(() => {
@@ -679,21 +444,9 @@ let saldo: number = 0;
         }, 100) as unknown as number;
     }
     
-    // Suscribirse al store de transacciones y cargar datos iniciales
+    // Cargar la primera página de datos al montar
     onMount(() => {
-        // Cargar la primera página de datos
         loadFirstPage();
-        
-        // Suscribirse a las actualizaciones del store
-        const unsubscribe = transactions.subscribe(procesarTransacciones);
-        
-        return () => {
-            // Limpiar temporizador y desuscribirse al desmontar
-            if (scrollTimer !== null) {
-                clearTimeout(scrollTimer);
-            }
-            unsubscribe();
-        };
     });
 </script>
 
@@ -757,7 +510,9 @@ let saldo: number = 0;
             <select id="filtroCuenta" bind:value={filtroCuenta}>
                 <option value="todas">Todas</option>
                 {#each cuentasUnicas as cuenta}
-                    <option value={cuenta}>{cuenta.charAt(0).toUpperCase() + cuenta.slice(1)}</option>
+                    <option value={cuenta}>
+                        {typeof cuenta === 'string' ? cuenta.charAt(0).toUpperCase() + cuenta.slice(1) : String(cuenta)}
+                    </option>
                 {/each}
             </select>
         </div>
@@ -829,25 +584,15 @@ let saldo: number = 0;
             No se encontraron operaciones con los filtros seleccionados.
         </div>
     {:else}
-        <div 
-            class="tabla-operaciones" 
-            bind:this={tablaContainer} 
-            on:scroll={optimizedHandleScroll}
-        >
+        <div class="tabla-operaciones">
             <table>
                 <thead>
                     <tr>
-                        <th on:click={() => cambiarOrden('fecha')} class:activo={ordenPor === 'fecha'}>
-                            Fecha {ordenPor === 'fecha' && (ordenDireccion === 'asc' ? '▲' : '▼')}
-                        </th>
-                        <th on:click={() => cambiarOrden('descripcion')} class:activo={ordenPor === 'descripcion'}>
-                            Descripción {ordenPor === 'descripcion' && (ordenDireccion === 'asc' ? '▲' : '▼')}
-                        </th>
+                        <th>Fecha</th>
+                        <th>Descripción</th>
                         <th>Cuenta</th>
                         <th>Ubicación</th>
-                        <th on:click={() => cambiarOrden('monto')} class:activo={ordenPor === 'monto'}>
-                            Monto {ordenPor === 'monto' && (ordenDireccion === 'asc' ? '▲' : '▼')}
-                        </th>
+                        <th>Monto</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -870,7 +615,11 @@ let saldo: number = 0;
                                 </div>
                             </td>
                             <td>
-                                {op.type.toLowerCase() === 'ingreso' ? 'Ingreso' : op.cuenta ? op.cuenta.charAt(0).toUpperCase() + op.cuenta.slice(1) : '-'}
+                                {op.type.toLowerCase() === 'ingreso'
+                                    ? 'Ingreso'
+                                    : (typeof op.cuenta === 'string' && op.cuenta.length > 0
+                                        ? op.cuenta.charAt(0).toUpperCase() + op.cuenta.slice(1)
+                                        : (op.cuenta != null ? String(op.cuenta) : '-'))}
                             </td>
                             <td>{op.location || '-'}</td>
                             <td class="monto-celda">
@@ -886,19 +635,6 @@ let saldo: number = 0;
                     {/each}
                 </tbody>
             </table>
-            
-            {#if $isLoadingMore}
-                <div class="cargando-mas">
-                    <div class="spinner"></div>
-                    <span>Cargando más transacciones...</span>
-                </div>
-            {/if}
-            
-            {#if !$hasMoreData && operacionesFiltradas.length > 0}
-                <div class="sin-mas-datos">
-                    No hay más transacciones para cargar
-                </div>
-            {/if}
         </div>
     {/if}
 </div>
@@ -1055,9 +791,7 @@ let saldo: number = 0;
         user-select: none;
     }
     
-    th.activo {
-        background-color: #e9e9e9;
-    }
+    /* th.activo eliminado: ya no se usa */
     
     tbody tr:hover {
         background-color: #f9f9f9;
