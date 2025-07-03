@@ -34,6 +34,7 @@
         "Escuela": escuela,
         "Salud": salud,
         "Egresos Casa": gastosCasa,
+        "Egresos Oficina": gastosMatchHome,
         "Gastos Oficina": gastosMatchHome
     };
     
