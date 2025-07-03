@@ -30,10 +30,10 @@
     // Mapa para relacionar cuentas con sus respectivas subcuentas
     const cuentaToSubcuentaMap: Record<string, string[]> = {
         "Servicios": servicios,
-        "Gastos Transporte": transporte,
+        "Egresos Transporte": transporte,
         "Escuela": escuela,
         "Salud": salud,
-        "Gastos Casa": gastosCasa,
+        "Egresos Casa": gastosCasa,
         "Gastos Oficina": gastosMatchHome
     };
     
@@ -46,9 +46,8 @@
         if (cuentaToSubcuentaMap[cuentaSeleccionada]) {
             return cuentaToSubcuentaMap[cuentaSeleccionada];
         }
-        
-        // Si no hay una configuración específica, usar las opciones predeterminadas según la ubicación
-        return location === 'Casa' ? gastosCasa : gastosMatchHome;
+        // Si no hay una configuración específica, dejar la lista vacía
+        return [];
     }
     
     // Obtener opciones de subcuenta según la cuenta seleccionada

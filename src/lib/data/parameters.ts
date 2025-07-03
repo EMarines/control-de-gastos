@@ -88,8 +88,9 @@ export const cuentaMatchHome: string[] = [
 
   export const pagadoCon: string[] = [
     "TDS 6409",
-    "Efectivo",
     "TDB 1623",
+    "TDN 5080",
+    "Efectivo",
     "TDS 1881",
     "Otro",
   ]
