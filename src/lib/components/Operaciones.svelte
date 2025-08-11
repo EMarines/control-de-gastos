@@ -17,7 +17,7 @@
     import SimpleIncomeModal from './SimpleIncomeModal.svelte'; // Cambiado a SimpleIncomeModal
     import SimpleExpenseModal from './SimpleExpenseModal.svelte'; // Cambiado a SimpleExpenseModal
     
-    import { formatCurrency } from '../util/formatters'; // Importar la función de formato
+    import { formatCurrency, parseCustomDate, formatearFecha } from '../util/formatters'; // Importar la función de formato
     
     type Operacion = Transaction; 
     
@@ -31,7 +31,7 @@
     let filtroFechaHasta: string = '';
 
     // Derived store para operaciones filtradas
-    const operacionesFiltradasStore = derived(transactions, $transactions => {
+    $: operacionesFiltradas = (() => {
         let arr = [...$transactions];
         // Filtros
         if (filtroTipo !== 'todos') arr = arr.filter(op => op.type?.toLowerCase() === filtroTipo);
@@ -47,18 +47,19 @@
         }
         if (filtroFechaDesde) {
             const desde = new Date(filtroFechaDesde);
-            arr = arr.filter(op => new Date(op.date) >= desde);
+            desde.setHours(0, 0, 0, 0);
+            arr = arr.filter(op => parseCustomDate(op.date) >= desde.getTime());
         }
         if (filtroFechaHasta) {
             const hasta = new Date(filtroFechaHasta);
-            hasta.setHours(23,59,59,999);
-            arr = arr.filter(op => new Date(op.date) <= hasta);
+            hasta.setHours(23, 59, 59, 999);
+            arr = arr.filter(op => parseCustomDate(op.date) <= hasta.getTime());
         }
         // Ordenar por fecha descendente
-        arr.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        arr.sort((a, b) => parseCustomDate(b.date) - parseCustomDate(a.date));
         return arr;
-    });
-    $: operacionesFiltradas = $operacionesFiltradasStore;
+    })();
+
     // Eliminado: declaración duplicada de filtros (ya están declarados arriba)
     
     // Ordenación
@@ -79,281 +80,6 @@
     let modalTypeToShow: 'income' | 'expense' | null = null;
     let deletingOperation: Operacion | null = null;
     
-    // Función para convertir fecha en formato "21-May-25" a timestamp
-    function parseCustomDate(dateStr: string): number {
-        try {
-            // console.log('parseCustomDate - Fecha recibida:', dateStr);
-            
-            // Si es null, undefined o cadena vacía
-            if (!dateStr) {
-                console.warn('parseCustomDate - Fecha vacía o null, utilizando fecha actual');
-                return Date.now();
-            }
-            
-            // Priorizar formato ISO (el formato de Firebase) ya que es más preciso
-            if (dateStr.includes('T') || dateStr.includes('Z')) {
-                const dateObj = new Date(dateStr);
-                if (!isNaN(dateObj.getTime())) {
-                    // console.log('parseCustomDate - Fecha con formato ISO:', dateStr, '->', dateObj.toISOString(), '->',  dateObj.getTime());
-                    return dateObj.getTime();
-                }
-            }            
-            if (dateStr.includes('-')) {
-                const parts = dateStr.split('-');
-                // console.log('parseCustomDate - Partes de la fecha:', parts);
-                
-                if (parts.length === 3) {
-                    // Verificar primero si es un formato ISO simplificado (yyyy-mm-dd)
-                    // Si la primera parte tiene 4 dígitos, asumimos que es el año (formato ISO yyyy-mm-dd)
-                    if (parts[0].length === 4) {
-                        const year = parseInt(parts[0]);
-                        const month = parseInt(parts[1]) - 1; // Meses en JS son base 0
-                        const day = parseInt(parts[2]);
-                        
-                        // console.log('parseCustomDate - Detectado formato ISO yyyy-mm-dd:', { year, month: month+1, day });
-                        
-                        const dateObj = new Date(year, month, day);
-                        if (!isNaN(dateObj.getTime())) {
-                            return dateObj.getTime();
-                        }
-                    }
-                    
-                    // Si no es formato ISO, procesamos como formato dd-MMM-yy (21-May-25, 9-Oct-24)
-                    const day = parseInt(parts[0]);
-                    // Lista de meses en inglés y español para detectar el formato correctamente
-                    const englishMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                    const spanishMonths = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-                    
-                    let month = englishMonths.indexOf(parts[1]);
-                    
-                    // Si no se encontró en inglés, buscar en español
-                    if (month === -1) {
-                        month = spanishMonths.indexOf(parts[1]);
-                    }
-                    
-                    // console.log('parseCustomDate - Mes detectado:', parts[1], 'índice:', month);
-                              
-                    if (month >= 0) {
-                        let year = parseInt(parts[2]);
-                        // Asumir que años de dos dígitos menores a 50 son del 2000 en adelante
-                        if (year < 100) {
-                            year = year < 50 ? 2000 + year : 1900 + year;
-                        }
-                        // console.log('parseCustomDate - Año calculado:', year);
-                        
-                        // Crear fecha y validar que sea correcta
-                        const dateObj = new Date(year, month, day);
-                        // console.log('parseCustomDate - Fecha creada:', dateObj.toISOString());
-                        
-                        if (!isNaN(dateObj.getTime())) {
-                            return dateObj.getTime();
-                        } else {
-                            console.error('parseCustomDate - Fecha inválida creada:', { day, month, year });
-                        }
-                    } else {
-                        console.error('parseCustomDate - Mes no reconocido:', parts[1]);
-                        
-                        // MEJORA: Intentar mapear meses desconocidos a formatos reconocidos
-                        const monthText = parts[1].toLowerCase();
-                        const monthMappings: {[key: string]: number} = {
-                            // Español completo
-                            'enero': 0, 'febrero': 1, 'marzo': 2, 'abril': 3,
-                            'mayo': 4, 'junio': 5, 'julio': 6, 'agosto': 7,
-                            'septiembre': 8, 'octubre': 9, 'noviembre': 10, 'diciembre': 11,
-                            // Inglés completo
-                            'january': 0, 'february': 1, 'march': 2, 'april': 3,
-                            'may': 4, 'june': 5, 'july': 6, 'august': 7,
-                            'september': 8, 'october': 9, 'november': 10, 'december': 11
-                        };
-                        
-                        // Intentar reconocer por coincidencia parcial
-                        for (const [key, value] of Object.entries(monthMappings)) {
-                            if (key.startsWith(monthText) || monthText.startsWith(key)) {
-                                month = value;
-                                // console.log('parseCustomDate - Mes identificado por coincidencia parcial:', parts[1], '→', key, month);
-                                break;
-                            }
-                        }
-                        
-                        // Si se identificó un mes por coincidencia parcial
-                        if (month >= 0) {
-                            let year = parseInt(parts[2]);
-                            if (year < 100) {
-                                year = year < 50 ? 2000 + year : 1900 + year;
-                            }
-                            
-                            const dateObj = new Date(year, month, day);
-                            if (!isNaN(dateObj.getTime())) {
-                                // console.log('parseCustomDate - Fecha reparada con coincidencia parcial:', dateObj.toISOString());
-                                return dateObj.getTime();
-                            }
-                        }
-                        
-                        // Si aún no se pudo identificar, intentar como fecha numérica (dd-mm-yyyy)
-                        const numericMonth = parseInt(parts[1]) - 1; // Restar 1 porque los meses en JS son base 0
-                        if (!isNaN(numericMonth) && numericMonth >= 0 && numericMonth <= 11) {
-                            let year = parseInt(parts[2]);
-                            if (year < 100) {
-                                year = year < 50 ? 2000 + year : 1900 + year;
-                            }
-                            
-                            const dateObj = new Date(year, numericMonth, day);
-                            if (!isNaN(dateObj.getTime())) {
-                                console.log('parseCustomDate - Fecha interpretada como dd-mm-yyyy:', dateObj.toISOString());
-                                return dateObj.getTime();
-                            }
-                        }
-                    }
-                }
-            } else if (dateStr.includes('/')) {
-                // Formato dd/mm/yyyy o mm/dd/yyyy
-                const parts = dateStr.split('/');
-                if (parts.length === 3) {
-                    let day, month, year;
-                    
-                    // Detectar formato de fecha basado en los valores
-                    const firstPart = parseInt(parts[0]);
-                    const secondPart = parseInt(parts[1]);
-                    
-                    // Si el primer número es > 12, probablemente es un día (formato europeo)
-                    if (firstPart > 12) {
-                        day = firstPart;
-                        month = secondPart - 1; // Meses en JS son base 0
-                    } else {
-                        // Asumir formato mm/dd/yyyy (americano)
-                        month = firstPart - 1;
-                        day = secondPart;
-                    }
-                    
-                    year = parseInt(parts[2]);
-                    
-                    const dateObj = new Date(year, month, day);
-                    // console.log('parseCustomDate - Fecha con formato dd/mm/yyyy o mm/dd/yyyy:', dateObj.toISOString());
-                    
-                    if (!isNaN(dateObj.getTime())) {
-                        return dateObj.getTime();
-                    }
-                }
-            }
-              // Para otros formatos de fecha (último recurso)
-            try {
-                // Intentar con Date.parse primero que es más preciso para fechas en formato estándar
-                const timestamp = Date.parse(dateStr);
-                if (!isNaN(timestamp)) {
-                    console.log('parseCustomDate - Fecha parseada con Date.parse:', dateStr, '->', new Date(timestamp).toISOString());
-                    return timestamp;
-                }
-                
-                const dateObj = new Date(dateStr);
-                // console.log('parseCustomDate - Fecha con formato estándar:', dateStr, '->', dateObj.toISOString(), '->', dateObj.getTime());
-                if (!isNaN(dateObj.getTime())) {
-                    return dateObj.getTime();
-                }
-            } catch (e) {
-                console.error('Error convirtiendo fecha estándar:', e, dateStr);
-            }
-            
-            // Último intento: buscar patrones numéricos en el formato dd/mm/yy o dd-mm-yy
-            const numericMatch = dateStr.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-            if (numericMatch) {
-                const day = parseInt(numericMatch[1]);
-                const month = parseInt(numericMatch[2]) - 1; // Meses en JS son base 0
-                let year = parseInt(numericMatch[3]);
-                if (year < 100) {
-                    year = year < 50 ? 2000 + year : 1900 + year;
-                }
-                
-                const dateObj = new Date(year, month, day);
-                if (!isNaN(dateObj.getTime())) {
-                    // console.log('parseCustomDate - Fecha extraída con regex:', dateObj.toISOString());
-                    return dateObj.getTime();
-                }
-            }
-            
-            console.warn('No se pudo parsear la fecha, retornando timestamp actual:', dateStr);
-            return Date.now(); // Devolver fecha actual como último recurso
-        } catch (error) {
-            console.error('Error al parsear fecha:', error, dateStr);
-            return Date.now(); // En caso de error, también devolver la fecha actual
-        }    }    // Formatear fecha para mostrarla en formato "DD-MMM-YY"
-    function formatearFecha(fechaStr: string): string {
-        try {
-            // Si es null, undefined o cadena vacía
-            if (!fechaStr) {
-                console.warn('formatearFecha - Fecha vacía o null');
-                return 'Fecha inválida';
-            }
-            
-            // Intentar parsear la fecha
-            let fecha: Date;
-            
-            // Si es un formato ISO completo con T o Z (como "2025-Jun-10T00:00:00.000Z")
-            if (fechaStr.includes('T') || fechaStr.includes('Z')) {
-                fecha = new Date(fechaStr);
-            }
-            // Si es un formato ISO simple (yyyy-mm-dd) como "2025-05-29"
-            else if (/^\d{4}-\d{2}-\d{2}$/.test(fechaStr)) {
-                const [year, month, day] = fechaStr.split('-').map(Number);
-                fecha = new Date(year, month - 1, day); // Meses en JS son base 0
-            }
-            // Si ya está en el formato correcto DD-MMM-YY (como "10-Jun-25")
-            else if (fechaStr.includes('-') && fechaStr.split('-').length === 3) {
-                const parts = fechaStr.split('-');
-                const englishMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                const spanishMonths = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-                
-                // Verificar si la segunda parte es un mes en texto y las otras partes son números
-                const possibleMonth = parts[1];
-                if (
-                    (englishMonths.includes(possibleMonth) || spanishMonths.includes(possibleMonth)) &&
-                    !isNaN(parseInt(parts[0])) && 
-                    !isNaN(parseInt(parts[2]))
-                ) {
-                    // Ya está en el formato correcto, asegurarse que el día tenga dos dígitos y el mes en inglés
-                    let monthIndex = englishMonths.indexOf(possibleMonth);
-                    if (monthIndex === -1) {
-                        monthIndex = spanishMonths.indexOf(possibleMonth);
-                    }
-                    const day = parts[0].padStart(2, '0');
-                    const month = englishMonths[monthIndex];
-                    return `${day}-${month}-${parts[2]}`;
-                }
-                else {
-                    // Usar parseCustomDate para intentar convertirlo
-                    const timestamp = parseCustomDate(fechaStr);
-                    if (timestamp > 0) {
-                        fecha = new Date(timestamp);
-                    } else {
-                        fecha = new Date(fechaStr);
-                    }
-                }
-            }
-            // Para otros formatos, usar parseCustomDate que ya tiene toda la lógica
-            else {
-                const timestamp = parseCustomDate(fechaStr);
-                if (timestamp > 0) {
-                    fecha = new Date(timestamp);
-                } else {
-                    fecha = new Date(fechaStr);
-                }
-            }
-              // Verificar si la fecha es válida
-            if (!fecha || isNaN(fecha.getTime())) {
-                console.error('Fecha inválida en formatearFecha:', fechaStr);
-                return 'Fecha inválida';
-            }
-              // Formatear la fecha como DD-MMM-YY
-            const day = fecha.getDate().toString().padStart(2, '0'); // Asegura que el día tenga dos dígitos
-            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            const month = monthNames[fecha.getMonth()];
-            const year = fecha.getFullYear().toString().substring(2); // Solo los últimos 2 dígitos
-            
-            return `${day}-${month}-${year}`;
-        } catch (error) {
-            console.error('Error al formatear fecha:', error, fechaStr);
-            return 'Fecha inválida';
-        }
-    }
     // Función eliminada: la lógica de filtrado está en el derived store
     
     // Función eliminada: la lógica de procesamiento está en el store y derived store
@@ -448,6 +174,15 @@
     onMount(() => {
         loadFirstPage();
     });
+
+    function limpiarFiltros() {
+        filtroTipo = 'todos';
+        filtroCuenta = 'todas';
+        filtroUbicacion = 'todas';
+        filtroBusqueda = '';
+        filtroFechaDesde = '';
+        filtroFechaHasta = '';
+    }
 </script>
 
 {#if modalTypeToShow === 'income'}
@@ -555,6 +290,9 @@
                 bind:value={filtroBusqueda}
                 aria-label="Buscar transacciones"
             >
+        </div>
+        <div class="filtro-actions">
+            <button on:click={limpiarFiltros} class="btn-limpiar">Limpiar</button>
         </div>
     </div>
     
@@ -715,6 +453,25 @@
     
     .filtro-busqueda input {
         width: 100%;
+    }
+
+    .filtro-actions {
+        display: flex;
+        align-items: flex-end;
+    }
+
+    .btn-limpiar {
+        padding: 0.5rem 1rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background-color: #f0f0f0;
+        cursor: pointer;
+        font-size: 0.9rem;
+        height: fit-content;
+    }
+
+    .btn-limpiar:hover {
+        background-color: #e0e0e0;
     }
     
     .resumen-financiero {
