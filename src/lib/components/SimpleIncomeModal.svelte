@@ -1,6 +1,6 @@
 <script lang="ts">    import { createEventDispatcher } from 'svelte';
     import { addTransaction, updateTransaction, removeTransaction, type Transaction, type TransactionType } from '../stores/transactions';
-    import { ingresosCasa, ingresosMatchHome, pagadoCon } from '../data/parameters';
+    import { ingresosCasa, ingresosMatchHome, pagadoCon, egesosDireccion } from '../data/parameters';
 
     // Props del componente
     export let show = false;
@@ -258,8 +258,9 @@
                         <label for="income-location">Ubicación</label>
                         <select id="income-location" bind:value={location} required>
                             <option value="">Seleccionar...</option>
-                            <option value="Casa">Casa</option>
-                            <option value="Match Home">Match Home</option>
+                            {#each egesosDireccion as opcion}
+                                <option value={opcion}>{opcion}</option>
+                            {/each}
                         </select>
                     </div>
                     

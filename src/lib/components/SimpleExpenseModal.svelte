@@ -1,6 +1,6 @@
 <script lang="ts">    import { createEventDispatcher } from 'svelte';
     import { addTransaction, updateTransaction, removeTransaction, type Transaction, type TransactionType, transactions } from '../stores/transactions';
-    import { cuentaCasa, cuentaMatchHome, gastosCasa, gastosMatchHome, servicios, transporte, escuela, salud, pagadoCon, pagadoPor } from '../data/parameters';
+    import { cuentaCasa, cuentaMatchHome, gastosCasa, gastosMatchHome, servicios, transporte, escuela, salud, pagadoCon, pagadoPor, egesosDireccion } from '../data/parameters';
     
     // Props del componente
     export let show = false;
@@ -343,10 +343,11 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label for="expense-location">Opciones</label>
-                        <select id="expense-location" bind:value={location} required>
+                                                <select id="expense-location" bind:value={location} required>
                             <option value="">Seleccionar...</option>
-                            <option value="Casa">Casa</option>
-                            <option value="Match Home">Match Home</option>
+                            {#each egesosDireccion as opcion}
+                                <option value={opcion}>{opcion}</option>
+                            {/each}
                         </select>
                     </div>
                     

@@ -4,7 +4,7 @@
     // VERSIÓN DE PRUEBA SÚPER SIMPLE DE formatCurrency
     function formatCurrency(value: number | null | undefined): string {
         if (typeof value !== 'number' || isNaN(value)) return 'Inválido';
-        return `$${value.toFixed(2)}`;
+        return `${value.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
     
     // Función para convertir fecha en formato "21-May-25" a timestamp para ordenamiento
@@ -39,7 +39,7 @@
               // Si no es ninguno de los formatos anteriores, intentar con Date            
             return new Date(dateStr).getTime();
         } catch (error) {
-            console.error('Error al parsear fecha:', error, dateStr);
+            
             return 0;
         }
     }
@@ -69,7 +69,7 @@
             
             // Verificar si la fecha es válida
             if (isNaN(date.getTime())) {
-                console.error('Fecha inválida:', dateStr);
+                
                 return 'Fecha inválida';
             }
             
@@ -81,12 +81,11 @@
             
             return `${day}-${month}-${year}`;
         } catch (error) {
-            console.error('Error al formatear fecha:', error, dateStr);
+            
             return 'Fecha inválida';
         }
     }
     
-    console.log("[TransactionHistory] Valor del store $transactions:", $transactions);
 </script>
 
 <div class="card">
@@ -107,8 +106,8 @@
                 return dateB - dateA;  // Orden descendente: más reciente primero
             }) as transaction (transaction.id)}
                 {@const formattedAmount = formatCurrency(transaction.amount)}
-                <!-- El console.log que estaba en el svelte:component problemático se puede mantener aquí si es necesario -->
-                {@const _ = console.log(`[TransactionHistory] Iterando: ID=${transaction.id}, Desc=${transaction.description}, Amount=${transaction.amount}, Type=${typeof transaction.amount}, Formatted=${formattedAmount}`)}                <div class="transaction-item" class:income={transaction.type.toLowerCase() === 'ingreso'} class:expense={transaction.type.toLowerCase() === 'egreso'}>
+                
+                <div class="transaction-item" class:income={transaction.type.toLowerCase() === 'ingreso'} class:expense={transaction.type.toLowerCase() === 'egreso'}>
                     <div class="transaction-details">
                         <h3>{transaction.description}</h3>
                         <p class="transaction-category">
@@ -118,13 +117,6 @@
                     </div>
                     <div class="transaction-amount">
                         <p class="amount">{transaction.type.toLowerCase() === 'ingreso' ? '+' : '-'}{formattedAmount}</p>
-                        <button 
-                            class="btn btn-sm btn-danger" 
-                            on:click={() => removeTransaction(transaction.id)}
-                            aria-label="Eliminar transacción"
-                        >
-                            ✕
-                        </button>
                     </div>
                 </div>
             {/each}
@@ -194,10 +186,10 @@
         color: var(--danger-color);
     }
 
-    .btn-sm {
+    /* .btn-sm {
         padding: 0.2rem 0.4rem;
         font-size: 0.8rem;
-    }
+    } */
 
     .empty-message {
         text-align: center;

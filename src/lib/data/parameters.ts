@@ -109,5 +109,11 @@ export const cuentaMatchHome: string[] = [
     "Otro"   
   ]
 
+  export const egesosDireccion: string[] = [
+    "Casa",
+    "Match Home",
+    "Systems",
+    "Otro"   
+  ]
 
 
