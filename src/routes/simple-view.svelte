@@ -2,7 +2,7 @@
 <script lang="ts">
     import { loadTransactionsFromJSON, transactions, isLoading, error } from '../lib/stores/simple-local-transactions';
     import FinancialSummary from '../lib/components/FinancialSummary.simple.svelte';
-    import LocationPieChartSimple from '../lib/components/LocationPieChartSimple.simple.svelte';
+    import LocationPieChartSimple from '../lib/components/LocationPieChartSimple.svelte';
     
     // Función simple de formateo de moneda
     function formatCurrency(value: number): string {
