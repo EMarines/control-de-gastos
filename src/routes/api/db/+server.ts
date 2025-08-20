@@ -6,9 +6,9 @@ import fs from 'fs';
 import path from 'path';
 
 // Ruta al archivo de la base de datos (usando rutas relativas)
-// Usando directamente db.json como solicitado
-const dbPath = path.join(process.cwd(), 'src', 'lib', 'data', 'db.json');
-const fallbackPath = path.join(process.cwd(), 'src', 'lib', 'data', 'db-final.json');
+// Usando directamente dbTC.json como base de datos principal
+const dbPath = path.join(process.cwd(), 'src', 'lib', 'data', 'dbTC.json');
+const fallbackPath = path.join(process.cwd(), 'src', 'lib', 'data', 'db.json');
 
 export async function GET() {
   try {
@@ -18,7 +18,7 @@ export async function GET() {
     
     if (fs.existsSync(dbPath)) {
       data = fs.readFileSync(dbPath, 'utf8');
-      source = 'db-final.json';
+      source = 'dbTC.json';
     } else if (fs.existsSync(fallbackPath)) {
       data = fs.readFileSync(fallbackPath, 'utf8');
       source = 'db.json';

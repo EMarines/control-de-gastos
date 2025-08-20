@@ -1,6 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher } from 'svelte';    import { type Transaction, addTransaction, updateTransaction, removeTransaction, transactions } from '../stores/transactions';
-    import { cuentaCasa, cuentaMatchHome, gastosCasa, gastosMatchHome, servicios, transporte, escuela, salud, pagadoCon, pagadoPor, egesosDireccion } from '../data/parameters';
+    import { cuentaCasa, cuentaMatchHome, gastosCasa, gastosMatchHome, servicios, transporte, escuela, salud, pagadoCon, pagadoPor } from '../data/parameters';
     
     export let show = false;
     export let initialData: Transaction | null = null; // Para recibir la operación a editar
@@ -379,15 +379,15 @@
                 <div class="form-row">
                     <!-- 1. Opciones (location) -->
                     <div class="form-group">
-                        <label for="location">Opciones</label>                                                <select 
+                        <label for="location">Opciones</label>                        
+                        <select 
                             id="location"
                             bind:value={location}
                             required
                         >
                             <option value="">Seleccionar...</option>
-                            {#each egesosDireccion as opcion}
-                                <option value={opcion}>{opcion}</option>
-                            {/each}
+                            <option value="Casa">Casa</option>
+                            <option value="Match Home">Match Home</option>
                         </select>
                     </div>
                       <!-- Cuenta -->

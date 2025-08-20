@@ -1,6 +1,6 @@
 <script lang="ts">    import { onMount } from 'svelte';
     // Importar la función fija desde el nuevo archivo
-    import { getExpensesByCategoryForLocation } from '../stores/fixed-functions';
+    import { getExpensesByCategoryForLocation } from '../stores/transactions';
     import { logData, logError, inspectObject } from '../util/debug.js';
     import { formatCurrency } from '../util/formatters';
       // Props

@@ -11,6 +11,46 @@ export function getExpensesByCategory(): Record<string, number> {
     }
     return result;
 }
+
+// Agrupa y suma los egresos por categoría para una ubicación específica y periodo
+export function getExpensesByCategoryForLocation(location: string, period: 'month' | 'last30days'): Record<string, number> {
+    const all = get(transactions);
+    const result: Record<string, number> = {};
+    const now = new Date();
+    let startDate: Date;
+
+    if (period === 'month') {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else {
+        startDate = new Date();
+        startDate.setDate(now.getDate() - 30);
+    }
+
+    for (const t of all) {
+        // Manejo flexible de ubicaciones para compatibilidad con diferentes formatos
+        let locationMatch = false;
+        if (location === 'Match Home') {
+            locationMatch = (t.location === 'Match Home' || t.location === 'MatchHome');
+        } else if (location === 'MatchHome') {
+            locationMatch = (t.location === 'MatchHome' || t.location === 'Match Home');
+        } else {
+            locationMatch = t.location === location;
+        }
+
+        if (t.type === 'egreso' && locationMatch) {
+            try {
+                const itemDate = new Date(t.date);
+                if (itemDate >= startDate && itemDate <= now) {
+                    const key = t.cuenta || t.category || 'Sin cuenta';
+                    result[key] = (result[key] || 0) + (typeof t.amount === 'number' ? t.amount : 0);
+                }
+            } catch (e) {
+                console.error('Error parsing date for transaction:', t, e);
+            }
+        }
+    }
+    return result;
+}
 // Nueva versión de transactions.ts sin referencias a Firebase
 import { writable, get } from 'svelte/store';
 

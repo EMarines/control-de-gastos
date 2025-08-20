@@ -244,7 +244,7 @@
 </script>
 
 {#if show}
-<div class="modal-overlay" on:click|self={closeModal} on:keydown={(e) => e.key === 'Escape' && closeModal()} role="dialog" aria-modal="true">
+<div class="modal-overlay" on:click|self={closeModal} on:keydown={(e) => e.key === 'Escape' && closeModal()} role="dialog" aria-modal="true" tabindex="0">
     <div class="modal-container" role="document">
         <div class="modal-header">
             <h2 id="modal-title">{initialData?.id ? 'Modificar Ingreso' : 'Registrar Ingreso'}</h2>

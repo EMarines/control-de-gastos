@@ -1,6 +1,7 @@
-<script lang="ts">    import { onMount } from 'svelte';
+<script lang="ts">
+    import { onMount } from 'svelte';
     // Importar la función fija desde el nuevo archivo
-    import { getExpensesByCategoryForLocation } from '../stores/fixed-functions';
+    import { getExpensesByCategoryForLocation } from '../stores/transactions';
     import { transactions } from '../stores/transactions';
     import type { Transaction } from '../stores/transactions';
     import { logData, logError, inspectObject } from '../util/debug.js';
@@ -141,78 +142,7 @@
         }
     }
     
-    // Función para verificar los datos de Match Home/MatchHome para depuración
-    function debugMatchHomeData() {
-        try {
-            console.group('Depurando datos para Match Home');
-            console.log('Periodo actual:', period);
-                            
-            // Revisar ambas variantes del nombre
-            const data1 = getExpensesByCategoryForLocation('Match Home', period);
-            const data2 = getExpensesByCategoryForLocation('MatchHome', period);
-                                    
-            console.log('Datos con "Match Home":', data1);
-            console.log('Datos con "MatchHome":', data2);
-                                      // Verificar las transacciones directamente
-            let allItems: Transaction[] = [];
-            const unsubscribe = transactions.subscribe(data => {
-                allItems = data;
-            });
-            unsubscribe();
-                                    
-            // Filtrar por ubicación para ver qué elementos existen
-            const matchHomeItems = allItems.filter(item => 
-                item && item.type === 'egreso' && item.location === 'Match Home');
-                                    
-            const matchHomeNoSpaceItems = allItems.filter(item => 
-                item && item.type === 'egreso' && item.location === 'MatchHome');
-                                    
-            console.log('Elementos con "Match Home":', matchHomeItems.length, matchHomeItems);
-            console.log('Elementos con "MatchHome":', matchHomeNoSpaceItems.length, matchHomeNoSpaceItems);
-
-            // Calcular la fecha límite según el periodo seleccionado
-            const now = new Date();
-            let startDate: Date;
-                
-            if (period === 'month') {
-                // Inicio del mes actual
-                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-            } else {
-                // Últimos 30 días
-                startDate = new Date();
-                startDate.setDate(now.getDate() - 30);
-            }
-            
-            // Verificar si hay transacciones dentro del rango de fechas
-            const matchHomeInDateRange = allItems.filter(item => {
-                if (!item || item.type !== 'egreso' || 
-                    (item.location !== 'Match Home' && item.location !== 'MatchHome')) return false;
-                
-                try {
-                    const itemDate = new Date(item.date);
-                    return itemDate >= startDate && itemDate <= now;
-                } catch (e) {
-                    return false;
-                }
-            });
-            
-            console.log('Match Home dentro del rango de fechas:', matchHomeInDateRange.length, matchHomeInDateRange);
-            console.groupEnd();
-            
-            // Devolver un resumen
-            return {
-                matchHomeCount: matchHomeItems.length,
-                matchHomeNoSpaceCount: matchHomeNoSpaceItems.length,
-                inDateRangeCount: matchHomeInDateRange.length
-            };        } catch (error) {
-            console.error('Error al depurar datos:', error);
-            return {
-                matchHomeCount: 0,
-                matchHomeNoSpaceCount: 0,
-                inDateRangeCount: 0
-            };
-        }
-    }
+    
 </script>
 
 <div class="chart-container">
@@ -275,13 +205,13 @@
                 </div>
             </div>
             
-            <!-- Gráfica de Match Home -->
+            <!-- Gráfica de MatchHome -->
             <div class="location-chart">
-                <h3>Match Home</h3>
+                <h3>MatchHome</h3>
                 
                 <div class="pie-chart-container">
                     {#if mounted}
-                        {@const percentages = calculatePercentages('Match Home')}
+                        {@const percentages = calculatePercentages('MatchHome')}
                         
                         {#if percentages.length > 0}
                             <svg width={size} height={size} viewBox="0 0 {size} {size}" class="pie-chart">
@@ -304,12 +234,9 @@
                                     </div>
                                 {/each}
                             </div>                        
-                        {:else}                            <div class="no-data">
-                                <p>No hay datos para <strong>Match Home</strong></p>
-                                <button class="debug-button" on:click={() => {
-                                    const result = debugMatchHomeData();
-                                    alert(`Resumen de depuración Match Home:\n- Elementos "Match Home": ${result.matchHomeCount}\n- Elementos "MatchHome": ${result.matchHomeNoSpaceCount}\n- En rango de fechas: ${result.inDateRangeCount}\n\nRevisa la consola para más detalles.`);
-                                }}>Depurar</button>
+                        {:else}
+                            <div class="no-data">
+                                <p>No hay datos para <strong>MatchHome</strong></p>
                             </div>
                         {/if}
                     {:else}
@@ -444,20 +371,7 @@
         margin: 0;
     }
     
-    .debug-button {
-        margin-top: 10px;
-        padding: 5px 10px;
-        font-size: 0.8rem;
-        background-color: #f1c40f;
-        border: none;
-        border-radius: 3px;
-        cursor: pointer;
-        color: #333;
-    }
     
-    .debug-button:hover {
-        background-color: #e6b800;
-    }
     
     @media (max-width: 768px) {
         .charts-wrapper {
