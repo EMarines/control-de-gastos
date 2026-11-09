@@ -198,6 +198,118 @@
         filtroFechaDesde = '';
         filtroFechaHasta = '';
     }
+
+    $: hayFiltrosActivos = 
+        filtroTipo !== 'todos' || 
+        filtroCuenta !== 'todas' || 
+        filtroUbicacion !== 'todas' || 
+        (filtroBusqueda ?? '').trim() !== '' || 
+        filtroFechaDesde !== '' || 
+        filtroFechaHasta !== '';
+
+    $: haySeleccion = hayFiltrosActivos && operacionesFiltradas.length > 0;
+
+    function getFechaCSV(dateStr: string): string {
+        if (!dateStr) return '';
+        if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+            return dateStr.slice(0, 10);
+        }
+        const ts = parseCustomDate(dateStr);
+        if (!ts || isNaN(ts)) return dateStr;
+        const d = new Date(ts);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    function escapeCSV(val: unknown): string {
+        if (val === null || val === undefined) return '';
+        const str = String(val);
+        if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
+            return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+    }
+
+    async function compartirCSV() {
+        if (!haySeleccion || operacionesFiltradas.length === 0) return;
+
+        const headers = [
+            'Fecha',
+            'Tipo',
+            'Descripción',
+            'Cuenta',
+            'Subcuenta',
+            'Ubicación',
+            'Monto',
+            'Referencia',
+            'Método de Pago',
+            'Notas'
+        ];
+
+        const rows = operacionesFiltradas.map(op => {
+            const montoNum = op.type?.toLowerCase() === 'egreso'
+                ? -Math.abs(Number(op.amount) || 0)
+                : Math.abs(Number(op.amount) || 0);
+            const cuentaStr = op.type?.toLowerCase() === 'ingreso'
+                ? 'Ingreso'
+                : (op.cuenta || op.category || '');
+
+            return [
+                escapeCSV(getFechaCSV(op.date)),
+                escapeCSV(op.type || ''),
+                escapeCSV(op.description || ''),
+                escapeCSV(cuentaStr),
+                escapeCSV(op.subcuenta || ''),
+                escapeCSV(op.location || ''),
+                montoNum.toFixed(2),
+                escapeCSV(op.invoice || ''),
+                escapeCSV(op.paymentMethod || ''),
+                escapeCSV(op.notes || '')
+            ].join(',');
+        });
+
+        const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+
+        let filename = `operaciones_seleccion_${new Date().toISOString().slice(0, 10)}.csv`;
+        if (filtroFechaDesde && filtroFechaHasta) {
+            filename = `operaciones_${filtroFechaDesde}_a_${filtroFechaHasta}.csv`;
+        } else if (filtroFechaDesde) {
+            filename = `operaciones_desde_${filtroFechaDesde}.csv`;
+        } else if (filtroFechaHasta) {
+            filename = `operaciones_hasta_${filtroFechaHasta}.csv`;
+        }
+
+        if (typeof navigator !== 'undefined' && typeof File !== 'undefined' && typeof navigator.share === 'function') {
+            try {
+                const file = new File([blob], filename, { type: 'text/csv' });
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        title: 'Operaciones seleccionadas',
+                        text: `Exportación de ${operacionesFiltradas.length} operaciones`,
+                        files: [file]
+                    });
+                    return;
+                }
+            } catch (err: any) {
+                if (err?.name === 'AbortError') {
+                    return;
+                }
+                console.warn('Web Share no disponible para archivos, usando descarga directa:', err);
+            }
+        }
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
 </script>
 
 {#if modalTypeToShow === 'income'}
@@ -296,12 +408,35 @@
                 >
             </div>
         </div>
-          <div class="filtro-busqueda">
+        
+        <div 
+            class="filtro-compartir" 
+            title={haySeleccion ? `Compartir ${operacionesFiltradas.length} operaciones en CSV` : 'Aplica un filtro para compartir la selección en CSV'}
+        >
+            <button 
+                type="button" 
+                class="btn-compartir" 
+                class:activo={haySeleccion} 
+                disabled={!haySeleccion}
+                on:click={compartirCSV}
+                aria-label="Compartir selección en CSV"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="18" cy="5" r="3"></circle>
+                    <circle cx="6" cy="12" r="3"></circle>
+                    <circle cx="18" cy="19" r="3"></circle>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                </svg>
+            </button>
+        </div>
+
+        <div class="filtro-busqueda">
             <label for="filtroBusqueda" class="visually-hidden">Buscar transacciones</label>
             <input 
                 type="text" 
                 id="filtroBusqueda"
-                placeholder="Buscar..."
+                placeholder="Buscar por descripción, cuenta, referencia, notas..."
                 bind:value={filtroBusqueda}
                 aria-label="Buscar transacciones"
             >
@@ -476,6 +611,46 @@
     
     .filtro-busqueda input {
         width: 100%;
+    }
+
+    .filtro-compartir {
+        display: flex;
+        align-items: flex-end;
+    }
+
+    .btn-compartir {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 38px;
+        height: 38px;
+        box-sizing: border-box;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background-color: #f5f5f5;
+        color: #b0b0b0;
+        cursor: not-allowed;
+        transition: background-color 0.2s, color 0.2s, border-color 0.2s, transform 0.1s, box-shadow 0.2s;
+    }
+
+    .btn-compartir.activo {
+        background-color: #2196F3;
+        border-color: #1976D2;
+        color: #ffffff;
+        cursor: pointer;
+        box-shadow: 0 2px 4px rgba(33, 150, 243, 0.25);
+    }
+
+    .btn-compartir.activo:hover {
+        background-color: #1976D2;
+        border-color: #1565C0;
+        box-shadow: 0 3px 6px rgba(33, 150, 243, 0.35);
+        transform: translateY(-1px);
+    }
+
+    .btn-compartir.activo:active {
+        transform: translateY(0);
+        box-shadow: 0 1px 2px rgba(33, 150, 243, 0.2);
     }
 
     .filtro-actions {

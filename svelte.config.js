@@ -6,7 +6,9 @@ const config = {
 	// for more information about preprocessors
 
 	kit: {
-		adapter: adapter(),
+		adapter: adapter({
+			runtime: 'nodejs22.x'
+		}),
 		alias: {
 			'$lib': './src/lib'
 		}
