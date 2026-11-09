@@ -35,24 +35,36 @@
         let arr = [...$transactions];
         // Filtros
         if (filtroTipo !== 'todos') arr = arr.filter(op => op.type?.toLowerCase() === filtroTipo);
-        if (filtroCuenta !== 'todas') arr = arr.filter(op => op.cuenta === filtroCuenta);
-        if (filtroUbicacion !== 'todas') arr = arr.filter(op => op.location === filtroUbicacion);
+        if (filtroCuenta !== 'todas') arr = arr.filter(op => (op.cuenta || op.category) === filtroCuenta);
+        if (filtroUbicacion !== 'todas') {
+            arr = arr.filter(op => {
+                if (!op.location) return false;
+                if (filtroUbicacion === 'Match Home' || filtroUbicacion === 'MatchHome') {
+                    return op.location === 'Match Home' || op.location === 'MatchHome';
+                }
+                return op.location === filtroUbicacion;
+            });
+        }
         if (filtroBusqueda) {
-            const b = filtroBusqueda.toLowerCase();
+            const b = filtroBusqueda.toLowerCase().trim();
             arr = arr.filter(op =>
-                op.description?.toLowerCase().includes(b) ||
-                op.notes?.toLowerCase().includes(b) ||
-                op.invoice?.toLowerCase().includes(b)
+                (op.description != null && String(op.description).toLowerCase().includes(b)) ||
+                (op.notes != null && String(op.notes).toLowerCase().includes(b)) ||
+                (op.invoice != null && String(op.invoice).toLowerCase().includes(b)) ||
+                (op.cuenta != null && String(op.cuenta).toLowerCase().includes(b)) ||
+                (op.subcuenta != null && String(op.subcuenta).toLowerCase().includes(b)) ||
+                (op.location != null && String(op.location).toLowerCase().includes(b)) ||
+                (op.paymentMethod != null && String(op.paymentMethod).toLowerCase().includes(b))
             );
         }
         if (filtroFechaDesde) {
-            const desde = new Date(filtroFechaDesde);
-            desde.setHours(0, 0, 0, 0);
+            const [y, m, d] = filtroFechaDesde.split('-').map(Number);
+            const desde = new Date(y, m - 1, d, 0, 0, 0, 0);
             arr = arr.filter(op => parseCustomDate(op.date) >= desde.getTime());
         }
         if (filtroFechaHasta) {
-            const hasta = new Date(filtroFechaHasta);
-            hasta.setHours(23, 59, 59, 999);
+            const [y, m, d] = filtroFechaHasta.split('-').map(Number);
+            const hasta = new Date(y, m - 1, d, 23, 59, 59, 999);
             arr = arr.filter(op => parseCustomDate(op.date) <= hasta.getTime());
         }
         // Ordenar por fecha descendente
@@ -67,8 +79,11 @@
     let ordenDireccion: 'asc' | 'desc' = 'desc';
     
     // Cuentas únicas para filtro (anteriormente categorías)
-    $: cuentasUnicas = Array.from(new Set($transactions.map(op => op.cuenta).filter((c): c is string => !!c)));
-    $: ubicaciones = Array.from(new Set($transactions.map(op => op.location).filter((u): u is string => !!u)));
+    $: cuentasUnicas = Array.from(new Set($transactions.map(op => op.cuenta || op.category).filter((c): c is string => !!c)));
+    $: ubicaciones = Array.from(new Set($transactions.map(op => {
+        if (op.location === 'MatchHome') return 'Match Home';
+        return op.location;
+    }).filter((u): u is string => !!u)));
     
     // Totales
     $: totalIngresos = operacionesFiltradas.filter((op: Operacion) => op.type === 'ingreso').reduce((sum, op) => sum + op.amount, 0);
@@ -314,12 +329,20 @@
         </div>    </div>
     
     <!-- Nota eliminada: ahora scroll infinito real -->
-      <!-- Tabla de operaciones con scroll infinito -->
     {#if !$isInitialDataLoaded && operacionesFiltradas.length === 0}
         <div class="cargando">Cargando datos...</div>
     {:else if $isInitialDataLoaded && operacionesFiltradas.length === 0}
         <div class="sin-datos">
-            No se encontraron operaciones con los filtros seleccionados.
+            <p>No se encontraron operaciones con los filtros seleccionados.</p>
+            {#if $hasMoreData}
+                <button 
+                    class="btn-limpiar" 
+                    style="margin-top: 0.5rem;" 
+                    on:click={() => loadMoreTransactions()}
+                    disabled={$isLoadingMore}>
+                    {$isLoadingMore ? 'Cargando...' : 'Cargar más de la base de datos'}
+                </button>
+            {/if}
         </div>
     {:else}
         <div class="tabla-operaciones" bind:this={tablaContainer} on:scroll={optimizedHandleScroll}>

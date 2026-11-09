@@ -48,27 +48,25 @@ export function parseCustomDate(dateStr: string): number {
             return Date.now();
         }
         
+        // Priorizar formato ISO yyyy-mm-dd (incluso si tiene T/Z) para evitar desfases UTC
+        if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+            const [year, month, day] = dateStr.slice(0, 10).split('-').map(Number);
+            const dateObj = new Date(year, month - 1, day, 12, 0, 0);
+            if (!isNaN(dateObj.getTime())) {
+                return dateObj.getTime();
+            }
+        }
+
         if (dateStr.includes('T') || dateStr.includes('Z')) {
             const dateObj = new Date(dateStr);
             if (!isNaN(dateObj.getTime())) {
                 return dateObj.getTime();
             }
-        }            
+        }
+
         if (dateStr.includes('-')) {
             const parts = dateStr.split('-');
-            
             if (parts.length === 3) {
-                if (parts[0].length === 4) {
-                    const year = parseInt(parts[0]);
-                    const month = parseInt(parts[1]) - 1;
-                    const day = parseInt(parts[2]);
-                    
-                    const dateObj = new Date(year, month, day);
-                    if (!isNaN(dateObj.getTime())) {
-                        return dateObj.getTime();
-                    }
-                }
-                
                 const day = parseInt(parts[0]);
                 const englishMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                 const spanishMonths = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -204,12 +202,12 @@ export function formatearFecha(fechaStr: string): string {
         
         let fecha: Date;
         
-        if (fechaStr.includes('T') || fechaStr.includes('Z')) {
-            fecha = new Date(fechaStr);
-        }
-        else if (/^\d{4}-\d{2}-\d{2}$/.test(fechaStr)) {
-            const [year, month, day] = fechaStr.split('-').map(Number);
+        if (/^\d{4}-\d{2}-\d{2}/.test(fechaStr)) {
+            const [year, month, day] = fechaStr.slice(0, 10).split('-').map(Number);
             fecha = new Date(year, month - 1, day);
+        }
+        else if (fechaStr.includes('T') || fechaStr.includes('Z')) {
+            fecha = new Date(fechaStr);
         }
         else if (fechaStr.includes('-') && fechaStr.split('-').length === 3) {
             const parts = fechaStr.split('-');
